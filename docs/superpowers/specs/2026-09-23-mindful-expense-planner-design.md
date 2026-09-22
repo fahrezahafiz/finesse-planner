@@ -1,7 +1,7 @@
 # Mindful Expense Planner — Design Specification
 
 Date: 2026-09-23  
-Status: Approved conversational design; awaiting written-spec review  
+Status: Approved written specification  
 Source workbook: [Finesse Wealth Checker and Tracker](https://docs.google.com/spreadsheets/d/1cS5o9PY6D-P3HS-fpt7zxaOJu37eZPVHSfYKtQ72ywg/edit)
 
 ## 1. Purpose
@@ -42,7 +42,7 @@ The current detailed budget area can contain repeated category labels and may no
 ### Included
 
 - Mobile web app served by Google Apps Script.
-- Two-account access control.
+- Access control derived from the workbook's Google sharing permissions.
 - Purchase planning and strict affordability recommendations.
 - Reservations for active plans.
 - Month-end financial projections and corrective suggestions.
@@ -67,6 +67,8 @@ The current detailed budget area can contain repeated category labels and may no
 ## 5. Architecture
 
 Use a separate Apps Script project attached to the workbook. It serves an HTML/CSS/JavaScript mobile interface and uses Apps Script services to read and write the spreadsheet.
+
+Deploy the web app to execute as the user accessing it. Every server entry point opens the workbook under that caller's authority before returning data or attempting a write. Workbook sharing is the authorization source of truth; the app does not maintain a second email allowlist. The signed-in email is still required for audit fields, and missing identity, missing OAuth scopes, or failed workbook access denies the request without returning financial data.
 
 The app reads calculated planning state from `Ringkasan Perencanaan`. It writes only to the three planning ledgers and, when a purchase is completed, the established input columns in `Catat - Pengeluaran`. It never writes directly to `backend`, report sheets, or other calculated ranges.
 
@@ -276,10 +278,10 @@ The approved mockups are preserved in `.superpowers/brainstorm/77964-1790096665/
 
 ## 12. Access and security
 
-- Deploy the web app for signed-in Google users and execute requests with an authenticated identity.
-- Store the two approved email addresses in Apps Script properties, not in a visible sheet.
-- Check the allowlist before returning any workbook data or executing any action.
-- Deny access when the identity is missing or cannot be verified.
+- Deploy the web app for signed-in Google users and execute it as the user accessing the app, never as the deploying owner.
+- Use the workbook's Google sharing permissions as the only authorization source. Do not maintain a separate application allowlist.
+- Open the workbook under the caller's authority before returning any financial data or executing any action. Deny access when the identity is missing, required OAuth scopes are not granted, or workbook access fails.
+- Use the verified signed-in email for audit fields only; possessing an email address does not bypass the workbook permission check.
 - Share the workbook only with the same two accounts.
 - Do not expose sheet identifiers, formulas, or raw financial rows unnecessarily to the browser.
 - Validate all server inputs independently of client-side controls.
@@ -330,8 +332,9 @@ Development and acceptance testing use a separate copy of the workbook before pr
 
 ### Security and interface tests
 
-- Both approved accounts can use the app.
-- Other signed-in accounts and missing identities receive no data.
+- Both workbook-authorized accounts can use the app and their identities appear in audit fields.
+- Other signed-in accounts, missing identities, missing required OAuth scopes, and revoked workbook access receive no financial data.
+- A deployment configured to execute as the owner fails the release configuration check.
 - Mobile layouts remain readable and operable at common phone widths and enlarged text settings.
 - All important actions have usable focus states, labels, and confirmation feedback.
 
@@ -343,8 +346,8 @@ Development and acceptance testing use a separate copy of the workbook before pr
 4. Build the approved mobile interface.
 5. Run calculation, concurrency, security, and mobile acceptance tests against the copy.
 6. Add the planning sheets and verified formulas to the live workbook.
-7. Configure the two approved accounts in script properties.
-8. Deploy the signed-in web app and verify both accounts.
+7. Confirm the workbook is shared only with the two approved accounts and deploy the signed-in web app to execute as the accessing user.
+8. Verify both accounts can use the app and a signed-in account without workbook access receives no data.
 9. Run a small live smoke test: create and cancel a plan, perform and reverse a small transfer, and convert a test plan exactly once.
 
 ## 16. Acceptance scenarios
