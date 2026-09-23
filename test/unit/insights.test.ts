@@ -100,6 +100,27 @@ describe("analyzeTransferPatterns", () => {
     expect(shopping).toMatchObject({ frequency: 2, total: 300000, averageMonthlyNet: 150000 });
   });
 
+  it("excludes a lone REVERSED-status row with no reversing counterpart from recurrence totals", () => {
+    // The test above pairs a REVERSED original with its REVERSED reversing row. reversingTransfer
+    // always keeps the same month and amount and swaps categories, so that pair nets to zero by
+    // arithmetic symmetry alone -- it would pass even if the ACTIVE-only filter were never applied.
+    // This test removes that symmetry: a REVERSED original with NO counterpart row at all (the
+    // interrupted-write state from transfer-service.ts, where the reversing row can be persisted before
+    // the original's status flip completes, or simply a status flip with the counterpart row missing
+    // from this history slice). Only the `status === "ACTIVE"` filter -- not any arithmetic cancellation
+    // -- can zero this row out, so this proves the filter is doing real work.
+    const history = [
+      transfer("2026-04", "Dining", "Shopping", 500000, "REVERSED"),
+      transfer("2026-06", "Dining", "Shopping", 100000),
+      transfer("2026-08", "Dining", "Shopping", 200000),
+    ];
+    const result = analyzeTransferPatterns(history, parseYearMonth("2026-09"));
+    const shopping = result.recurringRecipients.find(r => r.category === "Shopping");
+    // Only the two ACTIVE months count; the lone REVERSED 2026-04 row contributes zero and does not
+    // count toward frequency. A buggy implementation that ignored status would instead see frequency 3.
+    expect(shopping).toMatchObject({ frequency: 2, total: 300000, averageMonthlyNet: 150000 });
+  });
+
   it("flags a recurring donor symmetrically with recurring recipients", () => {
     const result = analyzeTransferPatterns(historyForMonths({
       "2026-03": { Shopping: 100000 },
