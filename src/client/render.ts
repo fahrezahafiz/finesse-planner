@@ -1,7 +1,13 @@
 import type { ClientState, Store, ViewName } from "./state";
 import { formatIDR, formatLocalDate } from "./format";
 
-/** A view renderer fills `container` (the view's content area, below its h1) from the current state. */
+/**
+ * A view renderer fills `container` (the view's content area, below its h1) from the current
+ * state. `state` is a read-only snapshot - a renderer that needs to call a mutation (e.g.
+ * `api.reservePurchase(...)`), update the store afterwards so the shell re-renders, or navigate to
+ * another view is expected to close over `store`/`api` rather than receive them here. See
+ * `createApp()` in client.ts for how a view module gets that `store`/`api` pair.
+ */
 export type ViewRenderer = (container: HTMLElement, state: ClientState) => void;
 
 const VIEW_ORDER: readonly ViewName[] = ["plan", "budgets", "transfers", "history"];
@@ -18,6 +24,11 @@ const VIEW_LABELS: Record<ViewName, string> = {
  * the same for budgets/transfers/history) before or after mountShell runs. Whatever renderer is
  * registered for a view replaces this file's placeholder for it on the next render - mountShell
  * never needs to know Task 13's renderers exist ahead of time.
+ *
+ * A registered renderer is a closure built by the view module itself, e.g.
+ * `registerView("plan", createPlanRenderer(store, api))`, where `store`/`api` come from
+ * client.ts's `createApp()`. See test/unit/client-app.test.ts for a worked example of a stub
+ * renderer reaching an injected store/api this way.
  */
 const viewRenderers = new Map<ViewName, ViewRenderer>();
 
