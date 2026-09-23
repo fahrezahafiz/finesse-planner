@@ -1,4 +1,5 @@
 import type { LocalDate, YearMonth } from "./types";
+import { DomainError } from "./errors";
 import { daysInMonth, parseLocalDate, parseYearMonth } from "./validation";
 
 export interface RequestClock {
@@ -10,12 +11,19 @@ export interface RequestClock {
 }
 
 export function jakartaClock(now: Date): RequestClock {
-  const nowIso = now.toISOString();
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    throw new DomainError("INVALID_DATE");
+  }
+
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(now);
   const values = Object.fromEntries(
     parts
@@ -25,8 +33,13 @@ export function jakartaClock(now: Date): RequestClock {
   const year = values.year;
   const monthPart = values.month;
   const day = values.day;
+  const hour = values.hour;
+  const minute = values.minute;
+  const second = values.second;
 
-  if (!year || !monthPart || !day) throw new Error("Jakarta date formatting failed");
+  if (!year || !monthPart || !day || !hour || !minute || !second) {
+    throw new DomainError("INVALID_DATE");
+  }
 
   const today = parseLocalDate(`${year}-${monthPart}-${day}`);
   const month = parseYearMonth(`${year}-${monthPart}`);
@@ -35,6 +48,8 @@ export function jakartaClock(now: Date): RequestClock {
   const numericDay = Number(day);
   const finalDay = daysInMonth(numericYear, numericMonth);
   const monthEnd = parseLocalDate(`${year}-${monthPart}-${String(finalDay).padStart(2, "0")}`);
+  const milliseconds = String(now.getUTCMilliseconds()).padStart(3, "0");
+  const nowIso = `${today}T${hour}:${minute}:${second}.${milliseconds}+07:00`;
 
   return Object.freeze({
     nowIso,
