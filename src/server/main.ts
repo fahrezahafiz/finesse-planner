@@ -5,4 +5,8 @@ export function doGet(): GoogleAppsScript.HTML.HtmlOutput {
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
 }
 
-Object.assign(globalThis, { doGet });
+export function include(filename: string): string {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+Object.assign(globalThis, { doGet, include });
