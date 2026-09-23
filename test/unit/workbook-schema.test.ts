@@ -71,6 +71,30 @@ describe("workbook schema contract", () => {
       syntheticSourceMap(),
     )).toThrow("WORKBOOK_SCHEMA_INVALID");
   });
+
+  it("requires calibrated income dates on the income sheet with aligned rows", () => {
+    const map = syntheticSourceMap();
+    expect(() => validateWorkbookSchema(fakeWorkbook(fixture("healthy")), {
+      ...map, actualIncome: { ...map.actualIncome, date: { ...map.actualIncome.date, a1: "B3:B50" } },
+    })).toThrow("WORKBOOK_SCHEMA_INVALID");
+  });
+
+  it.each([
+    ["wrong sheet", { sheet: "backend" }],
+    ["wrong column", { a1: "C2:C50" }],
+  ])("rejects an income date range with %s", (_label, overrides) => {
+    const map = syntheticSourceMap();
+    expect(() => validateWorkbookSchema(fakeWorkbook(fixture("healthy")), {
+      ...map, actualIncome: { ...map.actualIncome, date: { ...map.actualIncome.date, ...overrides } },
+    })).toThrow("WORKBOOK_SCHEMA_INVALID");
+  });
+
+  it("rejects a legacy amount-only income map with a domain schema error", () => {
+    const map = syntheticSourceMap();
+    expect(() => validateWorkbookSchema(fakeWorkbook(fixture("healthy")), {
+      ...map, actualIncome: map.actualIncome.amount,
+    } as unknown as WorkbookSourceMap)).toThrow("WORKBOOK_SCHEMA_INVALID");
+  });
 });
 
 function withDuplicateBaselineHeader(): WorkbookStructure {

@@ -8,6 +8,7 @@ import {
 import {
   REQUIRED_EXISTING_SHEETS,
   sourceMapAnchors,
+  sourceMapRanges,
   type HeaderAnchor,
   type SourceRange,
   type WorkbookSourceMap,
@@ -69,6 +70,14 @@ function validateSourceMap(structure: WorkbookStructure, sourceMap: WorkbookSour
   }
 
   validateExpenseColumns(sourceMap);
+  for (const ranges of [
+    [sourceMap.actualIncome.date, sourceMap.actualIncome.amount],
+    [sourceMap.baseline.category, sourceMap.baseline.plannedAmount],
+    [sourceMap.accounts.names, sourceMap.accounts.currentBalances],
+  ]) {
+    const parsed = ranges.map(range => parseRange(range.a1)!);
+    if (parsed.some(range => range.startRow !== parsed[0]!.startRow || range.endRow !== parsed[0]!.endRow)) invalid();
+  }
   validateAnchors(sheets, sourceMapAnchors(sourceMap));
 
   const freshnessSheet = sheets.get(sourceMap.formulaFreshness.sheet);
@@ -151,7 +160,8 @@ function rangeContracts(sourceMap: WorkbookSourceMap): readonly {
     { range: sourceMap.expenseInput.detail, expectedSheet: "Catat - Pengeluaran" },
     { range: sourceMap.expenseInput.account, expectedSheet: "Catat - Pengeluaran" },
     { range: sourceMap.expenseInput.amount, expectedSheet: "Catat - Pengeluaran" },
-    { range: sourceMap.actualIncome, expectedSheet: "Catat - Pendapatan" },
+    { range: sourceMap.actualIncome.date, expectedSheet: "Catat - Pendapatan" },
+    { range: sourceMap.actualIncome.amount, expectedSheet: "Catat - Pendapatan" },
     { range: sourceMap.cashTransfer, expectedSheet: "Catat - Pindah Kas/Nabung" },
     { range: sourceMap.accounts.names, expectedSheet: "backend" },
     { range: sourceMap.accounts.currentBalances, expectedSheet: "backend" },
@@ -166,8 +176,12 @@ function exactlyOneSheet(structure: WorkbookStructure, name: string) {
 }
 
 function isCalibrated(sourceMap: WorkbookSourceMap): boolean {
-  return sourceMap.calibration.source === "development-copy-audit"
-    && !Number.isNaN(Date.parse(sourceMap.calibration.auditedAt));
+  try {
+    return sourceMap.calibration.source === "development-copy-audit"
+      && !Number.isNaN(Date.parse(sourceMap.calibration.auditedAt))
+      && sourceMapRanges(sourceMap).every(range => range && typeof range.sheet === "string"
+        && typeof range.a1 === "string" && typeof range.header?.a1 === "string" && typeof range.header.label === "string");
+  } catch { return false; }
 }
 
 function parseRange(a1: string): {

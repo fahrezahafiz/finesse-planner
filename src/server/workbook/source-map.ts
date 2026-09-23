@@ -37,7 +37,7 @@ export interface WorkbookSourceMap {
     readonly account: SourceRange;
     readonly amount: SourceRange;
   };
-  readonly actualIncome: SourceRange;
+  readonly actualIncome: { readonly date: SourceRange; readonly amount: SourceRange };
   readonly cashTransfer: SourceRange;
   readonly accounts: {
     readonly names: SourceRange;
@@ -68,7 +68,8 @@ export function sourceMapRanges(sourceMap: WorkbookSourceMap): readonly SourceRa
     sourceMap.expenseInput.detail,
     sourceMap.expenseInput.account,
     sourceMap.expenseInput.amount,
-    sourceMap.actualIncome,
+    sourceMap.actualIncome.date,
+    sourceMap.actualIncome.amount,
     sourceMap.cashTransfer,
     sourceMap.accounts.names,
     sourceMap.accounts.currentBalances,

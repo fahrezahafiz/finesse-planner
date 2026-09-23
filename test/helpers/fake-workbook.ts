@@ -20,7 +20,10 @@ export function syntheticSourceMap(): WorkbookSourceMap {
       account: range("Catat - Pengeluaran", "E2:E50", "E1", "Synthetic expense account"),
       amount: range("Catat - Pengeluaran", "F2:F50", "F1", "Synthetic expense amount"),
     },
-    actualIncome: range("Catat - Pendapatan", "F2:F50", "F1", "Synthetic actual income"),
+    actualIncome: {
+      date: range("Catat - Pendapatan", "B2:B50", "B1", "Synthetic income date"),
+      amount: range("Catat - Pendapatan", "F2:F50", "F1", "Synthetic actual income"),
+    },
     cashTransfer: range("Catat - Pindah Kas/Nabung", "B2:B50", "B1", "Synthetic cash transfer"),
     accounts: {
       names: range("backend", "B2:B50", "B1", "Synthetic account name"),
