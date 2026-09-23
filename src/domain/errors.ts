@@ -11,6 +11,7 @@ export type DomainErrorCode =
   | "INVALID_MONTH"
   | "LOCK_TIMEOUT"
   | "OVERRIDE_REASON_REQUIRED"
+  | "RECIPIENT_BUDGET_EXCEEDED"
   | "WORKBOOK_SCHEMA_INVALID";
 
 export class DomainError extends Error {
