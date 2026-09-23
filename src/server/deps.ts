@@ -1,4 +1,7 @@
 import type { RequestClock } from "../domain/time";
+import { DomainError } from "../domain/errors";
+
+export const WORKBOOK_ID_PROPERTY = "WORKBOOK_ID";
 
 export interface AuthorizationInfoAdapter {
   getAuthorizationStatus(): GoogleAppsScript.Script.AuthorizationStatus;
@@ -15,7 +18,6 @@ export interface ServerDeps {
   };
   readonly spreadsheetApp: {
     openById(id: string): GoogleAppsScript.Spreadsheet.Spreadsheet;
-    getActiveSpreadsheet(): { getId(): string };
   };
   readonly workbookId: string;
   readonly now: () => Date;
@@ -23,12 +25,27 @@ export interface ServerDeps {
 }
 
 export function appsScriptDeps(): ServerDeps {
+  const workbookId = configuredWorkbookId();
+
   return {
     authModeFull: ScriptApp.AuthMode.FULL,
     scriptApp: ScriptApp,
     session: Session,
     spreadsheetApp: SpreadsheetApp,
-    workbookId: SpreadsheetApp.getActiveSpreadsheet().getId(),
+    workbookId,
     now: () => new Date(),
   };
+}
+
+function configuredWorkbookId(): string {
+  try {
+    const workbookId = PropertiesService.getScriptProperties()
+      .getProperty(WORKBOOK_ID_PROPERTY)
+      ?.trim();
+    if (workbookId) return workbookId;
+  } catch {
+    // Configuration failures must not disclose deployment details.
+  }
+
+  throw new DomainError("ACCESS_DENIED");
 }

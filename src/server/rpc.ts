@@ -20,10 +20,11 @@ export interface RpcRuntime {
 }
 
 export function secureRpc<I, O>(
+  parseInput: (input: unknown) => I,
   handler: (input: I, auth: AuthContext, deps: ServerDeps) => O,
   runtime?: RpcRuntime,
-): (input: I) => RpcResult<O> {
-  return (input: I): RpcResult<O> => {
+): (input: unknown) => RpcResult<O> {
+  return (input: unknown): RpcResult<O> => {
     try {
       const deps = runtime?.deps ?? appsScriptDeps();
       const requestDeps: ServerDeps = {
@@ -31,8 +32,9 @@ export function secureRpc<I, O>(
         requestClock: jakartaClock(deps.now()),
       };
       const auth = authorizeCaller(requestDeps, runtime?.workbookId ?? requestDeps.workbookId);
+      const parsedInput = parseInput(input);
 
-      return { ok: true, data: handler(input, auth, requestDeps) };
+      return { ok: true, data: handler(parsedInput, auth, requestDeps) };
     } catch (error) {
       return rpcError(error);
     }
@@ -41,17 +43,22 @@ export function secureRpc<I, O>(
 
 function rpcError(error: unknown): RpcResult<never> {
   if (error instanceof AuthorizationRequiredError) {
+    if (error.code !== "AUTHORIZATION_REQUIRED") return internalError();
+    const authorizationUrl = safeAuthorizationUrl(error.authorizationUrl);
+
     return {
       ok: false,
       error: {
         code: error.code,
         message: "Authorization is required to continue.",
-        ...(error.authorizationUrl ? { authorizationUrl: error.authorizationUrl } : {}),
+        ...(authorizationUrl ? { authorizationUrl } : {}),
       },
     };
   }
 
   if (error instanceof DomainError) {
+    if (!isPublicErrorCode(error.code)) return internalError();
+
     return {
       ok: false,
       error: {
@@ -61,6 +68,10 @@ function rpcError(error: unknown): RpcResult<never> {
     };
   }
 
+  return internalError();
+}
+
+function internalError(): RpcResult<never> {
   return {
     ok: false,
     error: {
@@ -69,6 +80,34 @@ function rpcError(error: unknown): RpcResult<never> {
     },
   };
 }
+
+function isPublicErrorCode(code: unknown): code is DomainError["code"] {
+  return typeof code === "string" && PUBLIC_ERROR_CODES.has(code);
+}
+
+function safeAuthorizationUrl(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    /^https:\/\/script\.google\.com(?:\/|$)/.test(value) &&
+    !/\s/.test(value)
+    ? value
+    : undefined;
+}
+
+const PUBLIC_ERROR_CODES: ReadonlySet<string> = new Set([
+  "ACCESS_DENIED",
+  "AUTHORIZATION_REQUIRED",
+  "CATEGORY_BUDGET_EXCEEDED",
+  "DONOR_BUDGET_EXCEEDED",
+  "FORMULA_ERROR",
+  "IDENTITY_UNAVAILABLE",
+  "INVALID_AMOUNT",
+  "INVALID_DATE",
+  "INVALID_INPUT",
+  "INVALID_MONTH",
+  "LOCK_TIMEOUT",
+  "OVERRIDE_REASON_REQUIRED",
+  "WORKBOOK_SCHEMA_INVALID",
+]);
 
 function publicMessage(code: DomainError["code"]): string {
   switch (code) {

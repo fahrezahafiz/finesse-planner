@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { DomainError } from "../../src/domain/errors";
+import { AuthorizationRequiredError } from "../../src/server/auth";
 import { secureRpc } from "../../src/server/rpc";
 import { fakeDeps } from "../helpers/fake-apps-script";
 
@@ -8,6 +10,7 @@ describe("secureRpc", () => {
       openError: new Error("Permission denied for book-id / Budget!A1"),
     });
     const rpc = secureRpc(
+      (input) => input,
       () => {
         deps.audit.handlerCalls += 1;
         return { privateBalance: 999_000 };
@@ -30,7 +33,7 @@ describe("secureRpc", () => {
 
   it("returns only the safe Apps Script authorization URL when OAuth is required", () => {
     const deps = fakeDeps({ authorizationStatus: "REQUIRED" });
-    const rpc = secureRpc(() => "financial data", { deps });
+    const rpc = secureRpc((input) => input, () => "financial data", { deps });
 
     expect(rpc(undefined)).toEqual({
       ok: false,
@@ -47,7 +50,7 @@ describe("secureRpc", () => {
       authorizationStatus: "REQUIRED",
       authorizationUrl: "javascript:alert('book-id')",
     });
-    const rpc = secureRpc(() => "financial data", { deps });
+    const rpc = secureRpc((input) => input, () => "financial data", { deps });
 
     expect(rpc(undefined)).toEqual({
       ok: false,
@@ -63,7 +66,7 @@ describe("secureRpc", () => {
       authorizationStatus: "REQUIRED",
       authorizationUrlError: new Error("callback URL includes book-id and Budget!A1"),
     });
-    const rpc = secureRpc(() => "financial data", { deps });
+    const rpc = secureRpc((input) => input, () => "financial data", { deps });
 
     expect(rpc(undefined)).toEqual({
       ok: false,
@@ -77,6 +80,7 @@ describe("secureRpc", () => {
   it("creates one request clock and reauthorizes each request before calling the handler", () => {
     const deps = fakeDeps({ now: new Date("2026-09-23T17:30:00.000Z") });
     const rpc = secureRpc(
+      (input) => input,
       (_input, auth, requestDeps) => {
         deps.audit.handlerCalls += 1;
         return {
@@ -103,7 +107,7 @@ describe("secureRpc", () => {
 
   it("sanitizes unexpected handler failures", () => {
     const deps = fakeDeps();
-    const rpc = secureRpc(() => {
+    const rpc = secureRpc((input) => input, () => {
       throw new Error("Leaked workbook book-id and Budget!A1");
     }, { deps });
 
@@ -117,5 +121,74 @@ describe("secureRpc", () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/book-id|Budget!A1|stack/i);
+  });
+
+  it("authorizes before rejecting malformed unknown input and never invokes the handler", () => {
+    const deps = fakeDeps();
+    const rpc = secureRpc(
+      (input: unknown) => {
+        if (typeof input !== "string") throw new DomainError("INVALID_INPUT");
+        return input;
+      },
+      () => {
+        deps.audit.handlerCalls += 1;
+        return "financial data";
+      },
+      { deps },
+    );
+
+    expect(rpc({ amount: "not an integer" })).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "The request could not be completed.",
+      },
+    });
+    expect(deps.audit.calls).toEqual([
+      "authorization:FULL",
+      "identity",
+      "open:book-id",
+      "metadata",
+    ]);
+    expect(deps.audit.handlerCalls).toBe(0);
+  });
+
+  it("rejects forged trusted errors and revalidates their authorization URL", () => {
+    const deps = fakeDeps();
+    const forgedAuthorization = new AuthorizationRequiredError("https://script.google.com@evil.example");
+    const rpc = secureRpc(
+      (input) => input,
+      () => {
+        throw forgedAuthorization;
+      },
+      { deps },
+    );
+
+    expect(rpc(undefined)).toEqual({
+      ok: false,
+      error: {
+        code: "AUTHORIZATION_REQUIRED",
+        message: "Authorization is required to continue.",
+      },
+    });
+
+    const forgedCode = Object.assign(new DomainError("ACCESS_DENIED"), {
+      code: "INTERNAL_DETAILS:book-id",
+    });
+    const codeRpc = secureRpc(
+      (input) => input,
+      () => {
+        throw forgedCode;
+      },
+      { deps },
+    );
+
+    expect(codeRpc(undefined)).toEqual({
+      ok: false,
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "The request could not be completed.",
+      },
+    });
   });
 });
