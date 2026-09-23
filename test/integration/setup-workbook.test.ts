@@ -110,6 +110,10 @@ describe("snapshot reader", () => {
     f.summary.getRange("K7:K8").setValues([[500000], [500000]]);
     const result = readPlanningSnapshot(f.auth, clock, f.map);
     expect(result.health).toBe("HEALTHY"); expect(result.actualIncome).toBe(1000000); expect(result.confirmedFutureIncome).toBe(200000);
+    expect(result.confirmedIncome).toEqual([
+      { amount: 100000, destinationAccount: "Main Account", expectedDate: "2026-09-23" },
+      { amount: 100000, destinationAccount: "Main Account", expectedDate: "2026-09-30" },
+    ]);
   });
   it("reserves RESERVED and OVERRIDDEN only, and replaces completed reservations with actuals", () => {
     const f = ready(); const plans = f.sheets.get("Rencana Pengeluaran")!;
@@ -119,6 +123,10 @@ describe("snapshot reader", () => {
     f.summary.getRange("F2:H2").setValues([[50000, 100000, 350000]]);
     const result = readPlanningSnapshot(f.auth, clock, f.map);
     expect(result.health).toBe("HEALTHY"); expect(result.categories.Dining.activeReservations).toBe(100000); expect(result.categories.Dining.availableBudget).toBe(350000);
+    expect(result.activeReservations).toEqual([
+      { amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+    ]);
   });
   it("rejects a stale same-day numeric result and missing category output", () => {
     const f = ready(); f.summary.getRange("B2").setValue(400000);

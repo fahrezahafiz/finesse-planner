@@ -45,6 +45,20 @@ export interface AccountPlanningSnapshot {
   currentBalance: Money;
 }
 
+/** A confirmed current-month income that can affect account liquidity. */
+export interface ConfirmedIncomeSnapshot {
+  amount: Money;
+  destinationAccount: string;
+  expectedDate: LocalDate;
+}
+
+/** An active plan that reserves the named account through its planned date. */
+export interface ActiveReservationSnapshot {
+  amount: Money;
+  paymentAccount: string;
+  plannedDate: LocalDate;
+}
+
 export interface PlanningSnapshot {
   month: YearMonth;
   health: PlanningHealth;
@@ -55,6 +69,10 @@ export interface PlanningSnapshot {
   unallocatedHeadroom: number;
   categories: Readonly<Record<string, CategoryPlanningSnapshot>>;
   accounts: Readonly<Record<string, AccountPlanningSnapshot>>;
+  planningDate: LocalDate;
+  daysRemainingInclusive: number;
+  confirmedIncome: readonly ConfirmedIncomeSnapshot[];
+  activeReservations: readonly ActiveReservationSnapshot[];
 }
 
 export interface GuardrailResult {
@@ -72,3 +90,9 @@ export interface Decision {
   failedGuardrails: readonly string[];
   firstFailure: string | null;
 }
+
+export type Correction =
+  | { kind: "LOWER_PRICE"; amount: Money }
+  | { kind: "TRANSFER"; fromCategory: string; toCategory: string; amount: Money }
+  | { kind: "ALTERNATE_ACCOUNT"; paymentAccount: string }
+  | { kind: "WAIT_FOR_INCOME"; expectedDate: LocalDate };

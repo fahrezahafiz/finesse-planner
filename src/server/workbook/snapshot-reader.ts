@@ -1,7 +1,7 @@
 import type { AuthContext } from "../auth";
 import type { RequestClock } from "../../domain/time";
 import { jakartaClock } from "../../domain/time";
-import type { Money, PlanningHealth, PlanningSnapshot, CategoryPlanningSnapshot, AccountPlanningSnapshot } from "../../domain/types";
+import type { LocalDate, Money, PlanningHealth, PlanningSnapshot, CategoryPlanningSnapshot, AccountPlanningSnapshot, ActiveReservationSnapshot, ConfirmedIncomeSnapshot } from "../../domain/types";
 import { parseLocalDate, parseMoney, parseYearMonth } from "../../domain/validation";
 import { validateWorkbookSchema } from "./schema";
 import type { SourceRange, WorkbookSourceMap } from "./source-map";
@@ -61,7 +61,8 @@ export function readPlanningSnapshot(auth: AuthContext, clock: RequestClock, sou
     return {
       month: clock.month, health: "HEALTHY", actualIncome: parseMoney(actualIncome), confirmedFutureIncome: parseMoney(futureIncome),
       protectedSavingsTarget: parseMoney(savings), totalAdjustedBudgets: parseMoney(adjustedTotal), unallocatedHeadroom: headroom,
-      categories, accounts: source.accounts,
+      categories, accounts: source.accounts, planningDate: clock.today, daysRemainingInclusive: clock.daysRemainingInclusive,
+      confirmedIncome: source.confirmedIncome, activeReservations: source.activeReservations,
     };
   } catch { return invalidSnapshot(clock, "FORMULA_ERROR"); }
 }
@@ -72,6 +73,8 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
   const pair = (left: SourceRange, right: SourceRange) => { const a = column(left); const b = column(right); if (a.length !== b.length) throw new Error(); return a.map((value, i) => [value, b[i]]); };
   const baseline = aggregateBaseline(pair(map.baseline.category, map.baseline.plannedAmount));
   const categories: Record<string, CategoryPlanningSnapshot> = Object.create(null);
+  const activeReservations: ActiveReservationSnapshot[] = [];
+  const confirmedIncome: ConfirmedIncomeSnapshot[] = [];
   for (const [name, amount] of Object.entries(baseline)) categories[name] = {
     baselineBudget: parseMoney(amount), transfersIn: parseMoney(0), transfersOut: parseMoney(0), adjustedBudget: parseMoney(amount),
     actualSpending: parseMoney(0), activeReservations: parseMoney(0), availableBudget: amount,
@@ -109,11 +112,12 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
   }
   for (const row of workbook.getSheetByName("Rencana Pengeluaran")!.getRange("A2:U1001").getValues()) {
     if (row.every(value => value === "")) continue;
-    requireId(row[0]); const month = sheetMonth(row[3]); sheetDate(row[4]); const amount = positiveMoney(row[8]);
+    requireId(row[0]); const month = sheetMonth(row[3]); const plannedDate = sheetDate(row[4]); const amount = positiveMoney(row[8]);
     if (!["RESERVED", "OVERRIDDEN", "COMPLETED", "CANCELLED", "EXPIRED"].includes(row[9])) throw new Error();
     if (month !== clock.month || !["RESERVED", "OVERRIDDEN"].includes(row[9])) continue;
     if (!Object.hasOwnProperty.call(accounts, row[7])) throw new Error();
     const category = categoryFor(categories, row[6]); category.activeReservations = parseMoney(category.activeReservations + amount);
+    activeReservations.push({ amount, paymentAccount: row[7] as string, plannedDate });
   }
   let futureIncome = 0;
   for (const row of workbook.getSheetByName("Pendapatan Diharapkan")!.getRange("A2:I1001").getValues()) {
@@ -121,7 +125,9 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
     requireId(row[0]); const date = sheetDate(row[3]); const amount = positiveMoney(row[6]);
     if (!["CONFIRMED", "RECEIVED", "CANCELLED"].includes(row[7])) throw new Error();
     if (row[7] === "CONFIRMED" && date >= clock.today && date <= clock.monthEnd) {
-      if (!Object.hasOwnProperty.call(accounts, row[5])) throw new Error(); futureIncome += amount;
+      if (!Object.hasOwnProperty.call(accounts, row[5])) throw new Error();
+      futureIncome += amount;
+      confirmedIncome.push({ amount, destinationAccount: row[5] as string, expectedDate: date });
     }
   }
   for (const category of Object.values(categories)) {
@@ -129,7 +135,7 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
     category.availableBudget = integer(planningMath.availableBudget(category.adjustedBudget, category.actualSpending, category.activeReservations));
   }
   const freshness = scalar(map.formulaFreshness);
-  return { categories, accounts, savings, actualIncome: parseMoney(actualIncome), futureIncome: parseMoney(futureIncome), freshness: freshness instanceof Date ? jakartaClock(freshness).today : parseLocalDate(freshness) };
+  return { categories, accounts, savings, actualIncome: parseMoney(actualIncome), futureIncome: parseMoney(futureIncome), confirmedIncome, activeReservations, freshness: freshness instanceof Date ? jakartaClock(freshness).today : parseLocalDate(freshness) };
 }
 
 function assertNamedRanges(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: WorkbookSourceMap): void {
@@ -151,7 +157,7 @@ function requireId(value: unknown): void { if (typeof value !== "string" || !val
 function categoryFor(categories: Record<string, CategoryPlanningSnapshot>, value: unknown): CategoryPlanningSnapshot {
   if (typeof value !== "string" || !Object.hasOwnProperty.call(categories, value)) throw new Error(); return categories[value];
 }
-function sheetDate(value: unknown): string {
+function sheetDate(value: unknown): LocalDate {
   // Formula date comparisons require real Sheets dates, not ISO-looking text.
   if (!(value instanceof Date)) throw new Error(); return jakartaClock(value).today;
 }
@@ -164,6 +170,7 @@ function invalidSnapshot(clock: RequestClock, health: PlanningHealth): PlanningS
   return {
     month: clock.month, health, actualIncome: NaN as Money, confirmedFutureIncome: NaN as Money,
     protectedSavingsTarget: NaN as Money, totalAdjustedBudgets: NaN as Money, unallocatedHeadroom: NaN,
-    categories: Object.create(null), accounts: Object.create(null),
+    categories: Object.create(null), accounts: Object.create(null), planningDate: clock.today,
+    daysRemainingInclusive: clock.daysRemainingInclusive, confirmedIncome: [], activeReservations: [],
   };
 }
