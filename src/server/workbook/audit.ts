@@ -1,5 +1,3 @@
-import type { HeaderAnchor } from "./source-map";
-
 export type CellValueType = "blank" | "boolean" | "date" | "number" | "string" | "unknown";
 
 export interface WorkbookHeader {
@@ -27,8 +25,13 @@ export interface WorkbookStructure {
 }
 
 export interface WorkbookAuditOptions {
-  /** Explicitly approved header cells. With no anchors, all values stay redacted. */
-  readonly headerAnchors?: readonly Pick<HeaderAnchor, "sheet" | "a1">[];
+  /** Explicitly approved header rows. With no regions, all values stay redacted. */
+  readonly headerSearchRegions?: readonly HeaderSearchRegion[];
+}
+
+export interface HeaderSearchRegion {
+  readonly sheet: string;
+  readonly row: number;
 }
 
 /**
@@ -39,8 +42,10 @@ export function auditWorkbookStructure(
   workbook: GoogleAppsScript.Spreadsheet.Spreadsheet,
   options: WorkbookAuditOptions = {},
 ): WorkbookStructure {
-  const headersBySheet = anchorsBySheet(options.headerAnchors ?? []);
-  const sheets = workbook.getSheets().map(sheet => auditSheet(sheet, headersBySheet.get(sheet.getName()) ?? []));
+  const searchRowsBySheet = headerRowsBySheet(options.headerSearchRegions ?? []);
+  const sheets = workbook.getSheets().map(sheet =>
+    auditSheet(sheet, searchRowsBySheet.get(sheet.getName()) ?? new Set()),
+  );
 
   return {
     sheetNames: sheets.map(sheet => sheet.name),
@@ -60,20 +65,18 @@ export function normalizeHeaderLabel(value: string): string {
 
 function auditSheet(
   sheet: GoogleAppsScript.Spreadsheet.Sheet,
-  anchors: readonly Pick<HeaderAnchor, "sheet" | "a1">[],
+  headerRows: ReadonlySet<number>,
 ): WorkbookSheetStructure {
   const dataRange = sheet.getDataRange();
   const values = dataRange.getValues();
   const formulas = dataRange.getFormulas();
-  const approvedHeaders = new Map(anchors.map(anchor => [anchor.a1, anchor]));
   const headers: WorkbookHeader[] = [];
   const formulaLocations: string[] = [];
 
   values.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
       const a1 = a1For(rowIndex + 1, columnIndex + 1);
-      const anchor = approvedHeaders.get(a1);
-      if (anchor && typeof value === "string") {
+      if (headerRows.has(rowIndex + 1) && typeof value === "string" && value.trim()) {
         headers.push({
           label: value,
           normalizedLabel: normalizeHeaderLabel(value),
@@ -97,14 +100,14 @@ function auditSheet(
   };
 }
 
-function anchorsBySheet(
-  anchors: readonly Pick<HeaderAnchor, "sheet" | "a1">[],
-): Map<string, Pick<HeaderAnchor, "sheet" | "a1">[]> {
-  const bySheet = new Map<string, Pick<HeaderAnchor, "sheet" | "a1">[]>();
-  for (const anchor of anchors) {
-    const existing = bySheet.get(anchor.sheet) ?? [];
-    existing.push(anchor);
-    bySheet.set(anchor.sheet, existing);
+function headerRowsBySheet(
+  regions: readonly HeaderSearchRegion[],
+): Map<string, Set<number>> {
+  const bySheet = new Map<string, Set<number>>();
+  for (const region of regions) {
+    const existing = bySheet.get(region.sheet) ?? new Set<number>();
+    existing.add(region.row);
+    bySheet.set(region.sheet, existing);
   }
   return bySheet;
 }

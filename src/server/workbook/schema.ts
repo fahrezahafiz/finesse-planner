@@ -1,10 +1,15 @@
 import { DomainError } from "../../domain/errors";
-import { auditWorkbookStructure, normalizeHeaderLabel, type WorkbookStructure } from "./audit";
+import {
+  auditWorkbookStructure,
+  normalizeHeaderLabel,
+  type HeaderSearchRegion,
+  type WorkbookStructure,
+} from "./audit";
 import {
   REQUIRED_EXISTING_SHEETS,
   sourceMapAnchors,
-  sourceMapRanges,
   type HeaderAnchor,
+  type SourceRange,
   type WorkbookSourceMap,
 } from "./source-map";
 
@@ -20,7 +25,9 @@ export function validateWorkbookSchema(
 ): ValidatedWorkbookSchema {
   if (!sourceMap || !isCalibrated(sourceMap)) invalid();
 
-  const structure = auditWorkbookStructure(workbook, { headerAnchors: sourceMapAnchors(sourceMap) });
+  const structure = auditWorkbookStructure(workbook, {
+    headerSearchRegions: headerSearchRegions(sourceMapAnchors(sourceMap)),
+  });
   const result = validateStructure(structure);
   validateSourceMap(structure, sourceMap);
 
@@ -45,7 +52,7 @@ export function validateStructure(structure: WorkbookStructure): Omit<ValidatedW
   const expenseInputColumns = expenseSheet.headers
     .map(header => header.column)
     .sort(compareColumns);
-  if (!sameColumns(expenseInputColumns, ["B", "C", "D", "E", "F"])) invalid();
+  if (!["B", "C", "D", "E", "F"].every(column => expenseInputColumns.includes(column))) invalid();
 
   return {
     sheetNames: structure.sheetNames,
@@ -57,9 +64,8 @@ function validateSourceMap(structure: WorkbookStructure, sourceMap: WorkbookSour
   if (sourceMap.timeZone !== structure.timeZone) invalid();
   const sheets = new Map(structure.sheets.map(sheet => [sheet.name, sheet]));
 
-  for (const range of sourceMapRanges(sourceMap)) {
-    const sheet = sheets.get(range.sheet);
-    if (!sheet || !rangeFits(range.a1, sheet.dimensions)) invalid();
+  for (const contract of rangeContracts(sourceMap)) {
+    validateRangeContract(sheets, contract.range, contract.expectedSheet);
   }
 
   validateExpenseColumns(sourceMap);
@@ -70,14 +76,36 @@ function validateSourceMap(structure: WorkbookStructure, sourceMap: WorkbookSour
 }
 
 function validateExpenseColumns(sourceMap: WorkbookSourceMap): void {
-  const columns = [
+  const ranges = [
     sourceMap.expenseInput.date,
     sourceMap.expenseInput.category,
     sourceMap.expenseInput.detail,
     sourceMap.expenseInput.account,
     sourceMap.expenseInput.amount,
-  ].map(range => rangeColumn(range.a1));
+  ];
+  const parsedRanges = ranges.map(range => parseRange(range.a1));
+  const validRanges = parsedRanges.filter((range): range is NonNullable<typeof range> => range !== undefined);
+  if (validRanges.length !== parsedRanges.length) invalid();
+  const columns = validRanges.map(range => range.startColumnLabel);
   if (!sameColumns(columns, ["B", "C", "D", "E", "F"])) invalid();
+  const first = validRanges[0]!;
+  if (!validRanges.every(range => range.startRow === first.startRow && range.endRow === first.endRow)) invalid();
+}
+
+function validateRangeContract(
+  sheets: ReadonlyMap<string, WorkbookStructure["sheets"][number]>,
+  range: SourceRange,
+  expectedSheet: string,
+): void {
+  if (range.sheet !== expectedSheet) invalid();
+  const sheet = sheets.get(range.sheet);
+  const parsedRange = parseRange(range.a1);
+  const header = parseRange(range.header.a1);
+  if (!sheet || !parsedRange || !header || !rangeFits(parsedRange, sheet.dimensions)) invalid();
+  if (parsedRange.startColumn !== parsedRange.endColumn
+    || header.startColumn !== header.endColumn
+    || header.startRow !== header.endRow
+    || parsedRange.startColumn !== header.startColumn) invalid();
 }
 
 function validateAnchors(
@@ -99,6 +127,38 @@ function validateAnchors(
   }
 }
 
+function headerSearchRegions(anchors: readonly HeaderAnchor[]): readonly HeaderSearchRegion[] {
+  return anchors.flatMap(anchor => {
+    const header = parseRange(anchor.a1);
+    return header && header.startColumn === header.endColumn && header.startRow === header.endRow
+      ? [{ sheet: anchor.sheet, row: header.startRow }]
+      : [];
+  });
+}
+
+function rangeContracts(sourceMap: WorkbookSourceMap): readonly {
+  readonly range: SourceRange;
+  readonly expectedSheet: string;
+}[] {
+  return [
+    { range: sourceMap.baseline.category, expectedSheet: "Atur Budgeting" },
+    { range: sourceMap.baseline.plannedAmount, expectedSheet: "Atur Budgeting" },
+    { range: sourceMap.savingsProfile.plannedIncome, expectedSheet: "Profil Kemampuan Menabung" },
+    { range: sourceMap.savingsProfile.plannedExpenses, expectedSheet: "Profil Kemampuan Menabung" },
+    { range: sourceMap.savingsProfile.protectedMonthlySavings, expectedSheet: "Profil Kemampuan Menabung" },
+    { range: sourceMap.expenseInput.date, expectedSheet: "Catat - Pengeluaran" },
+    { range: sourceMap.expenseInput.category, expectedSheet: "Catat - Pengeluaran" },
+    { range: sourceMap.expenseInput.detail, expectedSheet: "Catat - Pengeluaran" },
+    { range: sourceMap.expenseInput.account, expectedSheet: "Catat - Pengeluaran" },
+    { range: sourceMap.expenseInput.amount, expectedSheet: "Catat - Pengeluaran" },
+    { range: sourceMap.actualIncome, expectedSheet: "Catat - Pendapatan" },
+    { range: sourceMap.cashTransfer, expectedSheet: "Catat - Pindah Kas/Nabung" },
+    { range: sourceMap.accounts.names, expectedSheet: "backend" },
+    { range: sourceMap.accounts.currentBalances, expectedSheet: "backend" },
+    { range: sourceMap.formulaFreshness, expectedSheet: "backend" },
+  ];
+}
+
 function exactlyOneSheet(structure: WorkbookStructure, name: string) {
   const sheets = structure.sheets.filter(sheet => sheet.name === name);
   if (sheets.length !== 1) invalid();
@@ -110,23 +170,32 @@ function isCalibrated(sourceMap: WorkbookSourceMap): boolean {
     && !Number.isNaN(Date.parse(sourceMap.calibration.auditedAt));
 }
 
-function rangeFits(a1: string, dimensions: { readonly rows: number; readonly columns: number }): boolean {
+function parseRange(a1: string): {
+  readonly startColumn: number;
+  readonly startColumnLabel: string;
+  readonly startRow: number;
+  readonly endColumn: number;
+  readonly endRow: number;
+} | undefined {
   const match = /^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/.exec(a1);
-  if (!match) return false;
+  if (!match) return undefined;
   const startColumn = columnNumber(match[1]!);
   const startRow = Number(match[2]);
   const endColumn = columnNumber(match[3] ?? match[1]!);
   const endRow = Number(match[4] ?? match[2]!);
-  return startColumn > 0 && startRow > 0 && endColumn >= startColumn && endRow >= startRow
-    && endColumn <= dimensions.columns && endRow <= dimensions.rows;
+  if (startColumn <= 0 || startRow <= 0 || endColumn < startColumn || endRow < startRow) return undefined;
+  return { startColumn, startColumnLabel: match[1]!, startRow, endColumn, endRow };
+}
+
+function rangeFits(
+  range: ReturnType<typeof parseRange>,
+  dimensions: { readonly rows: number; readonly columns: number },
+): boolean {
+  return range !== undefined && range.endColumn <= dimensions.columns && range.endRow <= dimensions.rows;
 }
 
 function startCell(a1: string): string {
   return a1.split(":", 1)[0]!;
-}
-
-function rangeColumn(a1: string): string {
-  return /^([A-Z]+)\d+/.exec(a1)?.[1] ?? "";
 }
 
 function columnNumber(column: string): number {

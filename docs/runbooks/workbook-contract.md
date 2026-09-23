@@ -14,9 +14,10 @@ financial data is read.
    The caller-authorized `AuthContext.workbook` is the workbook passed to the
    audit; do not open it again with a different identity.
 3. Identify the intended header cells in the development copy. Supply only
-   those sheet/A1 coordinates to `auditWorkbookStructure(workbook, {
-   headerAnchors: [...] })`. This explicit allowlist is required because the
-   audit otherwise redacts every value, including strings.
+   the corresponding sheet/header-row search regions to
+   `auditWorkbookStructure(workbook, { headerSearchRegions: [...] })`. This
+   explicit allowlist is required because the audit otherwise redacts every
+   value, including strings.
 4. Review the resulting JSON offline. It contains sheet names, dimensions,
    named-range coordinates, normalized approved headers, formula locations,
    protected-range boundaries, and a type for every non-header cell. It must
