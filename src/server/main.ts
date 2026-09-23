@@ -1,3 +1,5 @@
+export { secureRpc } from "./rpc";
+
 export function doGet(): GoogleAppsScript.HTML.HtmlOutput {
   return HtmlService.createTemplateFromFile("Index")
     .evaluate()
