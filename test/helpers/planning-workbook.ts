@@ -2,6 +2,7 @@ import structure from "../fixtures/workbook-structure.json";
 import { syntheticSourceMap } from "./fake-workbook";
 
 type Cell = unknown;
+let nextSheetId = 1;
 export class MemorySheet {
   cells = new Map<string, Cell>();
   formulas = new Map<string, string>();
@@ -10,8 +11,10 @@ export class MemorySheet {
   frozen = 0;
   rows = 1100;
   columns = 26;
+  readonly sheetId = nextSheetId++;
   constructor(public name: string, public minRows = 0, public minColumns = 0) {}
   getName() { return this.name; }
+  getSheetId() { return this.sheetId; }
   getLastRow() { return Math.max(this.minRows, ...[...this.cells.keys(), ...this.formulas.keys()].map(key => Number(key.split(",")[0])), 0); }
   getLastColumn() { return Math.max(this.minColumns, ...[...this.cells.keys(), ...this.formulas.keys()].map(key => Number(key.split(",")[1])), 0); }
   getMaxRows() { return this.rows; }
@@ -69,6 +72,7 @@ export function planningWorkbook() {
   const names = new Map<string, any>();
   const created: string[] = [];
   const workbook = {
+    getId: () => "book-id",
     getSheets: () => [...sheets.values()],
     getSheetByName: (name: string) => sheets.get(name) ?? null,
     insertSheet: (name: string) => { const s = new MemorySheet(name); sheets.set(name, s); created.push(name); return s; },
