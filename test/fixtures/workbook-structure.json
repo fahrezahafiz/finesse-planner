@@ -1,0 +1,40 @@
+{
+  "healthy": {
+    "sheetNames": [
+      "Atur Budgeting",
+      "Profil Kemampuan Menabung",
+      "Catat - Pendapatan",
+      "Catat - Pengeluaran",
+      "Catat - Pindah Kas/Nabung",
+      "backend"
+    ],
+    "timeZone": "Asia/Jakarta",
+    "sheets": [
+      { "name": "Atur Budgeting", "dimensions": { "rows": 50, "columns": 8 }, "headers": [{ "label": "Synthetic baseline category", "normalizedLabel": "synthetic baseline category", "column": "D", "row": 1, "a1": "D1" }, { "label": "Synthetic planned amount", "normalizedLabel": "synthetic planned amount", "column": "E", "row": 1, "a1": "E1" }] },
+      { "name": "Profil Kemampuan Menabung", "dimensions": { "rows": 20, "columns": 8 }, "headers": [{ "label": "Synthetic planned income", "normalizedLabel": "synthetic planned income", "column": "B", "row": 1, "a1": "B1" }, { "label": "Synthetic planned expenses", "normalizedLabel": "synthetic planned expenses", "column": "C", "row": 1, "a1": "C1" }, { "label": "Synthetic protected savings", "normalizedLabel": "synthetic protected savings", "column": "D", "row": 1, "a1": "D1" }] },
+      { "name": "Catat - Pendapatan", "dimensions": { "rows": 50, "columns": 6 }, "headers": [{ "label": "Synthetic actual income", "normalizedLabel": "synthetic actual income", "column": "F", "row": 1, "a1": "F1" }] },
+      { "name": "Catat - Pengeluaran", "dimensions": { "rows": 50, "columns": 6 }, "headers": [{ "label": "Synthetic expense date", "normalizedLabel": "synthetic expense date", "column": "B", "row": 1, "a1": "B1" }, { "label": "Synthetic expense category", "normalizedLabel": "synthetic expense category", "column": "C", "row": 1, "a1": "C1" }, { "label": "Synthetic expense detail", "normalizedLabel": "synthetic expense detail", "column": "D", "row": 1, "a1": "D1" }, { "label": "Synthetic expense account", "normalizedLabel": "synthetic expense account", "column": "E", "row": 1, "a1": "E1" }, { "label": "Synthetic expense amount", "normalizedLabel": "synthetic expense amount", "column": "F", "row": 1, "a1": "F1" }] },
+      { "name": "Catat - Pindah Kas/Nabung", "dimensions": { "rows": 50, "columns": 6 }, "headers": [{ "label": "Synthetic cash transfer", "normalizedLabel": "synthetic cash transfer", "column": "B", "row": 1, "a1": "B1" }] },
+      { "name": "backend", "dimensions": { "rows": 50, "columns": 8 }, "headers": [{ "label": "Synthetic account name", "normalizedLabel": "synthetic account name", "column": "B", "row": 1, "a1": "B1" }, { "label": "Synthetic current balance", "normalizedLabel": "synthetic current balance", "column": "C", "row": 1, "a1": "C1" }, { "label": "Synthetic formula freshness", "normalizedLabel": "synthetic formula freshness", "column": "G", "row": 1, "a1": "G1" }], "formulaLocations": ["G2"] }
+    ],
+    "namedRanges": []
+  },
+  "missing-sheet": {
+    "sheetNames": ["Atur Budgeting", "Profil Kemampuan Menabung", "Catat - Pendapatan", "Catat - Pengeluaran", "backend"],
+    "timeZone": "Asia/Jakarta",
+    "sheets": [],
+    "namedRanges": []
+  },
+  "duplicate-label": {
+    "sheetNames": ["Atur Budgeting", "Profil Kemampuan Menabung", "Catat - Pendapatan", "Catat - Pengeluaran", "Catat - Pindah Kas/Nabung", "backend"],
+    "timeZone": "Asia/Jakarta",
+    "sheets": [{ "name": "Catat - Pengeluaran", "dimensions": { "rows": 50, "columns": 6 }, "headers": [{ "label": "Synthetic duplicate", "normalizedLabel": "synthetic duplicate", "column": "B", "row": 1, "a1": "B1" }, { "label": "Synthetic duplicate", "normalizedLabel": "synthetic duplicate", "column": "C", "row": 1, "a1": "C1" }]}],
+    "namedRanges": []
+  },
+  "wrong-expense-columns": {
+    "sheetNames": ["Atur Budgeting", "Profil Kemampuan Menabung", "Catat - Pendapatan", "Catat - Pengeluaran", "Catat - Pindah Kas/Nabung", "backend"],
+    "timeZone": "Asia/Jakarta",
+    "sheets": [{ "name": "Catat - Pengeluaran", "dimensions": { "rows": 50, "columns": 7 }, "headers": [{ "label": "Synthetic expense date", "normalizedLabel": "synthetic expense date", "column": "B", "row": 1, "a1": "B1" }, { "label": "Synthetic expense category", "normalizedLabel": "synthetic expense category", "column": "C", "row": 1, "a1": "C1" }, { "label": "Synthetic expense detail", "normalizedLabel": "synthetic expense detail", "column": "D", "row": 1, "a1": "D1" }, { "label": "Synthetic expense account", "normalizedLabel": "synthetic expense account", "column": "E", "row": 1, "a1": "E1" }, { "label": "Synthetic expense amount", "normalizedLabel": "synthetic expense amount", "column": "G", "row": 1, "a1": "G1" }]}],
+    "namedRanges": []
+  }
+}
