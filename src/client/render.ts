@@ -27,8 +27,10 @@ const VIEW_LABELS: Record<ViewName, string> = {
  *
  * A registered renderer is a closure built by the view module itself, e.g.
  * `registerView("plan", createPlanRenderer(store, api))`, where `store`/`api` come from
- * client.ts's `createApp()`. See test/unit/client-app.test.ts for a worked example of a stub
- * renderer reaching an injected store/api this way.
+ * client.ts's `createApp()` - memoized at module scope, so every call (this file's mountShell
+ * caller included) gets the exact same `store` instance, the one `store.subscribe(render)` below
+ * is listening to. See test/unit/client-app.test.ts for a worked example of a stub renderer
+ * reaching an injected store/api this way.
  */
 const viewRenderers = new Map<ViewName, ViewRenderer>();
 

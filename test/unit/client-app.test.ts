@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/dom";
-import { createApp } from "../../src/client/client";
+import { createApp, resetApp } from "../../src/client/client";
 import { mountShell, registerView, resetViewRegistry } from "../../src/client/render";
 import type { ViewRenderer } from "../../src/client/render";
 import type { Store } from "../../src/client/state";
@@ -72,6 +72,7 @@ function createStubPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
 
 beforeEach(() => {
   resetViewRegistry();
+  resetApp();
 });
 
 describe("view write-back channel (store/api reachable from a registered view)", () => {
@@ -127,5 +128,23 @@ describe("createApp", () => {
 
     expect(store.getState().status).toBe("loading");
     expect(typeof api.getBootstrap).toBe("function");
+  });
+
+  /**
+   * Regression test for the disconnected-store defect the reviewer flagged: a Task 13 view module
+   * lives in its own file and gets `store`/`api` by calling `createApp()` itself, not by receiving
+   * a shared reference from client.ts's bootstrap block. If `createApp()` built a fresh `Store` on
+   * every call, that second call's store would have an empty `listeners` set - `mountShell`'s
+   * `store.subscribe(render)` would only ever be watching the *first* instance - so the view's
+   * `store.setState(...)` calls would silently fail to re-render or navigate the shell. Calling
+   * `createApp()` twice (with different runners, to prove the argument is ignored after the first
+   * call) and asserting both calls return the same `store`/`api` object is what catches that.
+   */
+  it("returns the exact same store/api pair on a second call, so a separate view module can't get a disconnected store", () => {
+    const first = createApp({ run: vi.fn().mockResolvedValue({ ok: true, data: bootstrapFixture() }) });
+    const second = createApp({ run: vi.fn().mockResolvedValue({ ok: true, data: bootstrapFixture() }) });
+
+    expect(second.store).toBe(first.store);
+    expect(second.api).toBe(first.api);
   });
 });
