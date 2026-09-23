@@ -119,4 +119,22 @@ describe("evaluatePurchase", () => {
     expect(decision.failedGuardrails).toEqual(["CATEGORY_AVAILABILITY", "PROTECTED_SAVINGS", "ACCOUNT_LIQUIDITY"]);
     expect(decision.firstFailure).toBe("CATEGORY_AVAILABILITY");
   });
+
+  it("uses exact account arithmetic for a one-rupiah deficit beyond Number's safe aggregate range", () => {
+    const snapshot = healthySnapshot({
+      categories: { Shopping: { ...healthySnapshot().categories.Shopping, availableBudget: Number.MAX_SAFE_INTEGER } },
+      accounts: { Main: { currentBalance: parseMoney(Number.MAX_SAFE_INTEGER) } },
+      confirmedIncome: [{ amount: parseMoney(4), destinationAccount: "Main", expectedDate: parseLocalDate("2026-09-24") }],
+      activeReservations: [{ amount: parseMoney(Number.MAX_SAFE_INTEGER), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-24") }],
+    });
+    const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(5) }));
+    expect(decision.verdict).toBe("NOT_RECOMMENDED");
+    expect(decision.account).toEqual({ passed: false, shortfall: 1 });
+  });
+
+  it.each([NaN, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("returns unable for malformed proposal amount %s", amount => {
+    const decision = evaluatePurchase(healthySnapshot(), proposal({ amount: amount as never }));
+    expect(decision.verdict).toBe("UNABLE_TO_EVALUATE");
+    expect(decision.safeDailyAllowance).toBe(0);
+  });
 });
