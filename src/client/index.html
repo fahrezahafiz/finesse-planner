@@ -5,7 +5,12 @@
     <?!= include("Styles"); ?>
   </head>
   <body>
-    <main id="app"></main>
+    <!--
+      Plain mount point, not a <main> landmark: render.ts builds the shell's single <main> (plus
+      skip link, status region, and bottom nav) inside this element, so nesting a second <main>
+      here would create a duplicate landmark.
+    -->
+    <div id="app"></div>
     <?!= include("Client"); ?>
   </body>
 </html>
