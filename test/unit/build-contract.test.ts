@@ -25,6 +25,12 @@ describe("Apps Script page template", () => {
     expect(index).toContain('<?!= include("Styles"); ?>');
     expect(index).toContain('<?!= include("Client"); ?>');
     expect(server).toContain("HtmlService.createHtmlOutputFromFile(filename).getContent()");
-    expect(server).toContain("Object.assign(globalThis, { doGet, include })");
+    // Task 11 expanded this to every secured RPC endpoint; check the entry points that matter
+    // for google.script.run rather than pinning the exact multi-line object literal.
+    expect(server).toContain("Object.assign(globalThis, {");
+    expect(server).toContain("doGet,");
+    expect(server).toContain("include,");
+    expect(server).toContain("getBootstrap,");
+    expect(server).toContain("applyBaselineReviewRpc,");
   });
 });

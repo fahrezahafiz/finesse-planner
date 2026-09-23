@@ -1,4 +1,5 @@
 export { secureRpc } from "./rpc";
+import { createEndpoints } from "./endpoints";
 
 export function doGet(): GoogleAppsScript.HTML.HtmlOutput {
   return HtmlService.createTemplateFromFile("Index")
@@ -11,4 +12,36 @@ export function include(filename: string): string {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-Object.assign(globalThis, { doGet, include });
+export const {
+  getBootstrap,
+  checkPurchaseRpc,
+  reservePurchaseRpc,
+  overridePurchaseRpc,
+  cancelPlanRpc,
+  completePlanRpc,
+  createTransferRpc,
+  reverseTransferRpc,
+  createExpectedIncomeRpc,
+  updateExpectedIncomeRpc,
+  getHistoryRpc,
+  getInsightsRpc,
+  applyBaselineReviewRpc,
+} = createEndpoints();
+
+Object.assign(globalThis, {
+  doGet,
+  include,
+  getBootstrap,
+  checkPurchaseRpc,
+  reservePurchaseRpc,
+  overridePurchaseRpc,
+  cancelPlanRpc,
+  completePlanRpc,
+  createTransferRpc,
+  reverseTransferRpc,
+  createExpectedIncomeRpc,
+  updateExpectedIncomeRpc,
+  getHistoryRpc,
+  getInsightsRpc,
+  applyBaselineReviewRpc,
+});

@@ -96,6 +96,7 @@ function safeAuthorizationUrl(value: unknown): string | undefined {
 const PUBLIC_ERROR_CODES: ReadonlySet<string> = new Set([
   "ACCESS_DENIED",
   "AUTHORIZATION_REQUIRED",
+  "BASELINE_CELL_STALE",
   "CATEGORY_BUDGET_EXCEEDED",
   "DONOR_BUDGET_EXCEEDED",
   "FORMULA_ERROR",
