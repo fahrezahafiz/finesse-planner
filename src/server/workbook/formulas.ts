@@ -51,29 +51,34 @@ export function buildSummaryFormulas() {
   const income = (col: string) => ledger("Pendapatan Diharapkan", col);
   const start = 'DATEVALUE(FP_MONTH&"-01")';
   const monthDates = (range: string) => `${range},">="&${start},${range},"<"&EDATE(${start},1)`;
+  // EXACT treats category/status/month text as case-sensitive identities, never
+  // as SUMIF criterion expressions or wildcard patterns.
+  const exact = (range: string, value: string) => `N(EXACT(${range},${value}))`;
+  const sum = (amount: string, ...predicates: string[]) => `SUMPRODUCT(${[...predicates, amount].join(",")})`;
+  const currentMonthDates = (range: string) => [`N(${range}>=${start})`, `N(${range}<EDATE(${start},1))`];
   const categories = Array.from({ length: PLANNING_CAPACITY }, (_, i) => {
     const r = i + 2;
     const present = (formula: string) => `=IF(A${r}="","",${formula})`;
     return [
-      present(`SUMIF(FP_BASELINE_CATEGORY,A${r},FP_BASELINE_AMOUNT)`),
-      present(`SUMIFS(${t("G")},${t("F")},A${r},${t("D")},FP_MONTH,${t("J")},"ACTIVE")`),
-      present(`SUMIFS(${t("G")},${t("E")},A${r},${t("D")},FP_MONTH,${t("J")},"ACTIVE")`),
+      present(sum("FP_BASELINE_AMOUNT", exact("FP_BASELINE_CATEGORY", `A${r}`))),
+      present(sum(t("G"), exact(t("F"), `A${r}`), exact(t("D"), "FP_MONTH"), exact(t("J"), '"ACTIVE"'))),
+      present(sum(t("G"), exact(t("E"), `A${r}`), exact(t("D"), "FP_MONTH"), exact(t("J"), '"ACTIVE"'))),
       present(`B${r}+C${r}-D${r}`),
-      present(`SUMIFS(FP_EXPENSE_AMOUNT,FP_EXPENSE_CATEGORY,A${r},${monthDates("FP_EXPENSE_DATE")})`),
-      present(`SUMIFS(${p("I")},${p("G")},A${r},${p("D")},FP_MONTH,${p("J")},"RESERVED")+SUMIFS(${p("I")},${p("G")},A${r},${p("D")},FP_MONTH,${p("J")},"OVERRIDDEN")`),
+      present(sum("FP_EXPENSE_AMOUNT", exact("FP_EXPENSE_CATEGORY", `A${r}`), ...currentMonthDates("FP_EXPENSE_DATE"))),
+      present(["RESERVED", "OVERRIDDEN"].map(status => sum(p("I"), exact(p("G"), `A${r}`), exact(p("D"), "FP_MONTH"), exact(p("J"), `"${status}"`))).join("+")),
       present(`E${r}-F${r}-G${r}`),
     ];
   });
   const household = [
     `=SUMIFS(FP_ACTUAL_INCOME_AMOUNT,${monthDates("FP_ACTUAL_INCOME_DATE")})`,
-    `=SUMIFS(${income("G")},${income("H")},"CONFIRMED",${income("D")},">="&DATEVALUE(FP_TODAY),${income("D")},"<"&EDATE(${start},1))`,
+    `=${sum(income("G"), exact(income("H"), '"CONFIRMED"'), `N(${income("D")}>=DATEVALUE(FP_TODAY))`, `N(${income("D")}<EDATE(${start},1))`)}`,
     "=K1+K2", "=FP_PROTECTED_SAVINGS_SOURCE", `=SUM(B2:B${end})`, `=SUM(E2:E${end})`,
     "=K1+K2-K4-K6", "=K7",
     '=IF(AND(COUNT(K1:K8)=8,K10=0,K7>=0,COUNT(FP_BASELINE_AMOUNT)=COUNTIF(FP_BASELINE_CATEGORY,"<>"),COUNT(FP_ACTUAL_INCOME_AMOUNT)=COUNTA(FP_ACTUAL_INCOME_DATE),COUNT(FP_ACCOUNT_BALANCES)=COUNTIF(FP_ACCOUNT_NAMES,"<>")),"HEALTHY","INVALID")',
     `=SUM(C2:C${end})-SUM(D2:D${end})`, '=TEXT(TODAY(),"yyyy-mm")', '=TEXT(TODAY(),"yyyy-mm-dd")',
   ].map(formula => [formula]);
   return {
-    categoryNames: '=SORT(UNIQUE(FILTER(FP_BASELINE_CATEGORY,FP_BASELINE_CATEGORY<>"")))',
+    categoryNames: '=LET(labels,FILTER(FP_BASELINE_CATEGORY,FP_BASELINE_CATEGORY<>""),SORT(FILTER(labels,MAP(SEQUENCE(ROWS(labels)),LAMBDA(i,SUMPRODUCT(N(EXACT(labels,INDEX(labels,i))),N(SEQUENCE(ROWS(labels))<=i))=1)))))',
     categories, household,
   };
 }

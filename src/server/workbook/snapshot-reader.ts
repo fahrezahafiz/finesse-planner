@@ -152,10 +152,10 @@ function categoryFor(categories: Record<string, CategoryPlanningSnapshot>, value
   if (typeof value !== "string" || !Object.hasOwnProperty.call(categories, value)) throw new Error(); return categories[value];
 }
 function sheetDate(value: unknown): string {
-  // SUMIFS date criteria require real Sheets dates, not ISO-looking text.
+  // Formula date comparisons require real Sheets dates, not ISO-looking text.
   if (!(value instanceof Date)) throw new Error(); return jakartaClock(value).today;
 }
-function sheetMonth(value: unknown): string { return value instanceof Date ? jakartaClock(value).month : parseYearMonth(value); }
+function sheetMonth(value: unknown): string { return parseYearMonth(value); }
 function sameMatrix(left: readonly (readonly unknown[])[], right: readonly (readonly unknown[])[]): boolean {
   return left.length === right.length && left.every((row, i) => row.length === right[i].length && row.every((value, j) => value === right[i][j]));
 }

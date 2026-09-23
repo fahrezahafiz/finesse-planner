@@ -133,4 +133,24 @@ describe("snapshot reader", () => {
   it("rejects source schema without a map", () => {
     const f = ready(); expect(readPlanningSnapshot(f.auth, clock).health).toBe("WORKBOOK_SCHEMA_INVALID");
   });
+  it.each(["Rencana Pengeluaran", "Transfer Budget"])("rejects Date-valued budget months in %s even when cached totals match", name => {
+    const f = ready(); const month = new Date("2026-09-23T00:00:00+07:00");
+    // Inactive records isolate the month-type contract from amount reconciliation:
+    // the old reader accepted both and returned HEALTHY.
+    if (name === "Rencana Pengeluaran") {
+      f.sheets.get(name)!.getRange("A2:J2").setValues([["p1", "", "", month, new Date("2026-09-24T00:00:00+07:00"), "Dinner", "Dining", "Main Account", 50000, "CANCELLED"]]);
+    } else {
+      f.sheets.get(name)!.getRange("A2:K2").setValues([["t1", "", "", month, "Dining", "Shopping", 50000, "Reversed", "", "REVERSED", ""]]);
+    }
+    expect(readPlanningSnapshot(f.auth, clock, f.map).health).toBe("FORMULA_ERROR");
+  });
+  it("accepts literal adversarial categories without merging wildcard or case-distinct names", () => {
+    const f = ready(); const labels = ["Food*", "Food?", "Food", "food", ">Food", "=Food", "<>Food"];
+    f.sheets.get("Atur Budgeting")!.getRange("D2:E8").setValues(labels.map(label => [label, 100000]));
+    f.summary.getRange("A2:H8").setValues(labels.map(label => [label, 100000, 0, 0, 100000, 0, 0, 100000]));
+    f.summary.getRange("K5:K8").setValues([[700000], [700000], [100000], [100000]]);
+    const result = readPlanningSnapshot(f.auth, clock, f.map);
+    expect(result.health).toBe("HEALTHY"); expect(Object.keys(result.categories)).toEqual(labels);
+    for (const label of labels) expect(result.categories[label].baselineBudget).toBe(100000);
+  });
 });
