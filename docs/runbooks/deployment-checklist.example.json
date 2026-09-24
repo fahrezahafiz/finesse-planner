@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this file to release/deployment-checklist.json (gitignored) before a production release. Complete docs/runbooks/development-copy.md, docs/runbooks/deploy.md, and docs/runbooks/smoke-test.md first, then set every item below to true only once you have personally verified it for this release. npm run verify-release rejects the release if release/deployment-checklist.json is missing, malformed, or has any item not exactly true.",
+  "Development copy tested": false,
+  "Production sharing restricted": false,
+  "Two intended accounts verified": false,
+  "Unauthorized account denied": false,
+  "Smoke test complete": false
+}
