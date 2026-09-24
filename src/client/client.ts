@@ -2,7 +2,11 @@ import { createApi, createGoogleScriptRunner } from "./api";
 import type { ApiClient, ApiError, ScriptRunner } from "./api";
 import { createStore } from "./state";
 import type { Store } from "./state";
-import { mountShell } from "./render";
+import { mountShell, registerView } from "./render";
+import { createPlanRenderer } from "./views/plan-view";
+import { createBudgetsRenderer } from "./views/budgets-view";
+import { createTransfersRenderer } from "./views/transfers-view";
+import { createHistoryRenderer } from "./views/history-view";
 
 function normalizeError(error: unknown): ApiError {
   if (error && typeof error === "object" && "code" in error && "message" in error) {
@@ -37,6 +41,15 @@ export function createApp(runner: ScriptRunner = createGoogleScriptRunner()): { 
     const store = createStore();
     const api = createApi(runner);
     cachedApp = { store, api };
+
+    // Task 13's real view renderers, wired here (rather than left to each caller) so every
+    // consumer of createApp() - the bootstrap block below included - sees the full app, not just
+    // the shell. Each is a closure over this exact store/api pair (see render.ts's docstring for
+    // why that matters).
+    registerView("plan", createPlanRenderer(store, api));
+    registerView("budgets", createBudgetsRenderer(store, api));
+    registerView("transfers", createTransfersRenderer(store, api));
+    registerView("history", createHistoryRenderer(store, api));
   }
   return cachedApp;
 }
