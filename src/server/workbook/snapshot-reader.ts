@@ -117,7 +117,7 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
     if (month !== clock.month || !["RESERVED", "OVERRIDDEN"].includes(row[9])) continue;
     if (!Object.hasOwnProperty.call(accounts, row[7])) throw new Error();
     const category = categoryFor(categories, row[6]); category.activeReservations = parseMoney(category.activeReservations + amount);
-    activeReservations.push({ amount, paymentAccount: row[7] as string, plannedDate });
+    activeReservations.push({ actionId: row[0] as string, amount, paymentAccount: row[7] as string, plannedDate });
   }
   let futureIncome = 0;
   for (const row of workbook.getSheetByName("Pendapatan Diharapkan")!.getRange("A2:I1001").getValues()) {

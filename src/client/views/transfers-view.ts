@@ -249,6 +249,10 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
   let sessionTransfers: TransferView[] = [];
   const rowPending = new Set<string>();
   const rowErrors = new Map<string, string>();
+  // One reversal actionId per pending reversal row, keyed by the transfer being reversed - hoisted
+  // out here (rather than generated inline at the api.reverseTransfer() call site) so a failed
+  // reversal's retry reuses the same actionId, matching every other mutation flow in this file.
+  const reversalActionIds = new Map<string, string>();
 
   let showCreateForm = false;
   const createForm = createTransferForm(store, api, {
@@ -269,6 +273,9 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
   let reviewPending = false;
   let reviewError: string | null = null;
   let reviewResultNote: string | null = null;
+  // Hoisted for the same reason as every other mutation flow here: a failed review submission's
+  // retry must reuse this same actionId, only rotating to a fresh one after success.
+  let reviewActionId = crypto.randomUUID();
 
   let currentContainer: HTMLElement | null = null;
 
@@ -308,14 +315,20 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
     if (rowPending.has(transfer.actionId)) return;
     rowPending.add(transfer.actionId);
     rowErrors.delete(transfer.actionId);
+    let actionId = reversalActionIds.get(transfer.actionId);
+    if (!actionId) {
+      actionId = crypto.randomUUID();
+      reversalActionIds.set(transfer.actionId, actionId);
+    }
     rerender();
 
     api
-      .reverseTransfer({ actionId: crypto.randomUUID(), transferId: transfer.actionId })
+      .reverseTransfer({ actionId, transferId: transfer.actionId })
       .then(({ result, planningState }) => {
         sessionTransfers = sessionTransfers.map(t => (t.actionId === transfer.actionId ? { ...t, status: "REVERSED" } : t));
         sessionTransfers = [result, ...sessionTransfers];
         rowPending.delete(transfer.actionId);
+        reversalActionIds.delete(transfer.actionId);
         store.setState({ bootstrap: planningState });
       })
       .catch((error: unknown) => {
@@ -341,10 +354,11 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
     });
 
     api
-      .applyBaselineReview({ actionId: crypto.randomUUID(), reason, changes })
+      .applyBaselineReview({ actionId: reviewActionId, reason, changes })
       .then(({ result }) => {
         reviewPending = false;
         reviewResultNote = `Applied ${result.changes.length} baseline change(s) at ${formatLocalDate(result.appliedAt.slice(0, 10))}.`;
+        reviewActionId = crypto.randomUUID();
         insights = null;
         loadStarted = false;
         rerender();

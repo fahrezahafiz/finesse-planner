@@ -54,6 +54,7 @@ export interface ConfirmedIncomeSnapshot {
 
 /** An active plan that reserves the named account through its planned date. */
 export interface ActiveReservationSnapshot {
+  actionId: string;
   amount: Money;
   paymentAccount: string;
   plannedDate: LocalDate;

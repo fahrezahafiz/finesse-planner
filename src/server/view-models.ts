@@ -29,6 +29,7 @@ export interface AccountBalanceView {
 }
 
 export interface ActiveReservationView {
+  readonly actionId: string;
   readonly amount: number;
   readonly paymentAccount: string;
   readonly plannedDate: string;
@@ -73,6 +74,7 @@ export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateVi
       currentBalance: value.currentBalance,
     })),
     activeReservations: snapshot.activeReservations.map(reservation => ({
+      actionId: reservation.actionId,
       amount: reservation.amount,
       paymentAccount: reservation.paymentAccount,
       plannedDate: reservation.plannedDate,

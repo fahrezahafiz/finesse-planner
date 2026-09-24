@@ -2,6 +2,8 @@ import { formatIDR, formatLocalDate } from "../format";
 import { renderConfirmDialog, closeConfirmDialog } from "../components/confirm-dialog";
 import { renderPurchaseResult } from "./result-view";
 import { createExpectedIncomeSection } from "./expected-income-view";
+import { createTransferForm } from "./transfers-view";
+import { renderCategoryHealth } from "./category-health";
 import { PROTECTED_SAVINGS_CATEGORY } from "../../domain/transfers";
 import type { Store } from "../state";
 import type { ApiClient, ApiError } from "../api";
@@ -14,12 +16,24 @@ import type { PlanningStateView, PlanView as PlanViewModel, PurchaseCheckView } 
  * The Plan tab (spec section 11 "Home / Plan"): decision-first first viewport (protected savings,
  * funded amount, safe-to-plan amount, days remaining), the "Check a purchase" flow (which shows
  * result-view.ts's screen inline once a check comes back), active reservations with cancel/complete
- * actions, and the expected-income section (see expected-income-view.ts's docstring for why it's
- * mounted here rather than getting its own nav tab).
+ * actions, category health immediately below active reservations, and the expected-income section
+ * (see expected-income-view.ts's docstring for why it's mounted here rather than getting its own nav
+ * tab).
  *
- * Category health with remaining-amount bars lives on budgets-view.ts, its own dedicated tab - see
- * that file's docstring for why this task reads spec section 11's "one short scroll away" as
- * describing the pre-tab-split mockup rather than this task's four-tab architecture.
+ * Category health (remaining-amount bars, consumption bars, direct "Transfer budget" action) is
+ * rendered here via category-health.ts's shared renderer, immediately below active reservations -
+ * spec section 11 places it "immediately below active plans, one short scroll away" in the same
+ * section that defines the four-tab nav (Plan/Budgets/Transfers/History), so this tab shows it
+ * directly rather than requiring navigation to budgets-view.ts's dedicated tab (which still shows
+ * the same data as a fuller view).
+ *
+ * Active reservations: `bootstrap.activeReservations` (server-provided, survives a page reload)
+ * carries each reservation's own `actionId`, so Cancel/Complete act on every active reservation, not
+ * only ones created during this browser session. `sessionPlans` is now only a display-enrichment
+ * cache (it has the item name/category/status that `ActiveReservationView` doesn't carry) for
+ * reservations reserved/overridden earlier in this session; reservations that predate this session
+ * (e.g. from before a reload) render with the plainer amount/account/date text but the same
+ * Cancel/Complete actions.
  */
 
 interface ProposalDraft {
@@ -47,10 +61,6 @@ function appendSummaryRow(list: HTMLDListElement, label: string, value: string):
   list.append(dt, dd);
 }
 
-function isActivePlan(plan: PlanViewModel): boolean {
-  return plan.status === "RESERVED" || plan.status === "OVERRIDDEN";
-}
-
 export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
   let draft = emptyDraft();
   let checkActionId = crypto.randomUUID();
@@ -61,14 +71,17 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
   let resultPending = false;
   let resultError: string | null = null;
 
-  // Plans reserved/overridden/cancelled/completed during this browser session, tracked locally so
-  // Cancel/Complete has an actionId to call - see this file's docstring and
-  // expected-income-view.ts's "Known limitation" note: bootstrap's ActiveReservationView carries no
-  // actionId, and getHistoryRpc only returns terminal-status plans, so there is no bulk endpoint
-  // that lists actionable active plans.
+  // Plans reserved/overridden/cancelled/completed during this browser session. Cancel/Complete now
+  // act on every entry in `bootstrap.activeReservations` (each carries its own server-provided
+  // actionId - see this file's docstring), so this is only a display-enrichment cache: it supplies
+  // the item name/category/status that `ActiveReservationView` itself doesn't carry, for
+  // reservations made earlier in this session.
   let sessionPlans: PlanViewModel[] = [];
   const rowPending = new Set<string>();
   const rowErrors = new Map<string, string>();
+
+  let openTransferFor: string | null = null;
+  let categoryTransferForm: ((container: HTMLElement) => void) | null = null;
 
   const renderExpectedIncome = createExpectedIncomeSection(store, api);
 
@@ -197,44 +210,66 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
       });
   }
 
-  function cancelReservation(plan: PlanViewModel): void {
-    if (rowPending.has(plan.actionId)) return;
-    rowPending.add(plan.actionId);
-    rowErrors.delete(plan.actionId);
+  function cancelReservation(actionId: string): void {
+    if (rowPending.has(actionId)) return;
+    rowPending.add(actionId);
+    rowErrors.delete(actionId);
     rerender();
 
     api
-      .cancelPlan({ actionId: plan.actionId })
+      .cancelPlan({ actionId })
       .then(({ result, planningState }) => {
-        sessionPlans = sessionPlans.map(p => (p.actionId === result.actionId ? result : p));
-        rowPending.delete(plan.actionId);
+        sessionPlans = sessionPlans.some(p => p.actionId === result.actionId)
+          ? sessionPlans.map(p => (p.actionId === result.actionId ? result : p))
+          : [result, ...sessionPlans];
+        rowPending.delete(actionId);
         store.setState({ bootstrap: planningState });
       })
       .catch((error: unknown) => {
-        rowPending.delete(plan.actionId);
-        rowErrors.set(plan.actionId, describeApiError(error));
+        rowPending.delete(actionId);
+        rowErrors.set(actionId, describeApiError(error));
         rerender();
       });
   }
 
-  function completeReservation(plan: PlanViewModel): void {
-    if (rowPending.has(plan.actionId)) return;
-    rowPending.add(plan.actionId);
-    rowErrors.delete(plan.actionId);
+  function completeReservation(actionId: string): void {
+    if (rowPending.has(actionId)) return;
+    rowPending.add(actionId);
+    rowErrors.delete(actionId);
     rerender();
 
     api
-      .completePlan({ actionId: plan.actionId })
+      .completePlan({ actionId })
       .then(({ result, planningState }) => {
-        sessionPlans = sessionPlans.map(p => (p.actionId === result.actionId ? result : p));
-        rowPending.delete(plan.actionId);
+        sessionPlans = sessionPlans.some(p => p.actionId === result.actionId)
+          ? sessionPlans.map(p => (p.actionId === result.actionId ? result : p))
+          : [result, ...sessionPlans];
+        rowPending.delete(actionId);
         store.setState({ bootstrap: planningState });
       })
       .catch((error: unknown) => {
-        rowPending.delete(plan.actionId);
-        rowErrors.set(plan.actionId, describeApiError(error));
+        rowPending.delete(actionId);
+        rowErrors.set(actionId, describeApiError(error));
         rerender();
       });
+  }
+
+  function toggleCategoryTransfer(category: string): void {
+    if (openTransferFor === category) {
+      openTransferFor = null;
+      categoryTransferForm = null;
+    } else {
+      openTransferFor = category;
+      categoryTransferForm = createTransferForm(store, api, {
+        initialFromCategory: category,
+        onDone: () => {
+          openTransferFor = null;
+          categoryTransferForm = null;
+          rerender();
+        },
+      });
+    }
+    rerender();
   }
 
   function renderBody(container: HTMLElement, state: ClientState): void {
@@ -397,27 +432,17 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
       const list = document.createElement("ul");
       for (const reservation of bootstrap.activeReservations) {
         const item = document.createElement("li");
-        item.textContent =
-          `${formatIDR(reservation.amount)} from ${reservation.paymentAccount} on ${formatLocalDate(reservation.plannedDate)}`;
-        list.appendChild(item);
-      }
-      reservations.appendChild(list);
-    }
-
-    const actionablePlans = sessionPlans.filter(isActivePlan);
-    if (actionablePlans.length > 0) {
-      const actionableHeading = document.createElement("h3");
-      actionableHeading.textContent = "Manage this session's reservations";
-      reservations.appendChild(actionableHeading);
-
-      const actionableList = document.createElement("ul");
-      for (const plan of actionablePlans) {
-        const item = document.createElement("li");
+        // Enrich with this session's own record of the plan (item/category/status) when available;
+        // a reservation carried over from a prior session (e.g. after a reload) only has the
+        // amount/account/date the server view model itself carries, but gets the same actions.
+        const sessionPlan = sessionPlans.find(p => p.actionId === reservation.actionId);
         const text = document.createElement("span");
-        text.textContent = `${plan.item}: ${formatIDR(plan.amount)} (${plan.category}, ${plan.paymentAccount}) - ${plan.status}`;
+        text.textContent = sessionPlan
+          ? `${sessionPlan.item}: ${formatIDR(sessionPlan.amount)} (${sessionPlan.category}, ${sessionPlan.paymentAccount}) - ${sessionPlan.status}`
+          : `${formatIDR(reservation.amount)} from ${reservation.paymentAccount} on ${formatLocalDate(reservation.plannedDate)}`;
         item.appendChild(text);
 
-        const pending = rowPending.has(plan.actionId);
+        const pending = rowPending.has(reservation.actionId);
 
         const completeButton = document.createElement("button");
         completeButton.type = "button";
@@ -428,11 +453,13 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
         completeButton.addEventListener("click", () => {
           renderConfirmDialog(completePanel, {
             title: "Confirm purchase completed",
-            message: `Record ${formatIDR(plan.amount)} for ${plan.item} as actual spending.`,
+            message: sessionPlan
+              ? `Record ${formatIDR(sessionPlan.amount)} for ${sessionPlan.item} as actual spending.`
+              : `Record ${formatIDR(reservation.amount)} as actual spending.`,
             confirmLabel: "Confirm complete",
             onConfirm: () => {
               closeConfirmDialog(completePanel);
-              completeReservation(plan);
+              completeReservation(reservation.actionId);
             },
             onCancel: () => closeConfirmDialog(completePanel),
           });
@@ -448,18 +475,20 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
         cancelButton.addEventListener("click", () => {
           renderConfirmDialog(cancelPanel, {
             title: "Confirm cancel reservation",
-            message: `Release the ${formatIDR(plan.amount)} reserved for ${plan.item}.`,
+            message: sessionPlan
+              ? `Release the ${formatIDR(sessionPlan.amount)} reserved for ${sessionPlan.item}.`
+              : `Release the ${formatIDR(reservation.amount)} reserved.`,
             confirmLabel: "Confirm cancel",
             onConfirm: () => {
               closeConfirmDialog(cancelPanel);
-              cancelReservation(plan);
+              cancelReservation(reservation.actionId);
             },
             onCancel: () => closeConfirmDialog(cancelPanel),
           });
         });
         item.append(cancelButton, cancelPanel);
 
-        const rowError = rowErrors.get(plan.actionId);
+        const rowError = rowErrors.get(reservation.actionId);
         if (rowError) {
           const error = document.createElement("p");
           error.className = "error-text";
@@ -467,12 +496,25 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
           item.appendChild(error);
         }
 
-        actionableList.appendChild(item);
+        list.appendChild(item);
       }
-      reservations.appendChild(actionableList);
+      reservations.appendChild(list);
     }
 
     container.appendChild(reservations);
+
+    const categoryHealth = document.createElement("section");
+    const categoryHealthHeading = document.createElement("h2");
+    categoryHealthHeading.textContent = "Category health";
+    categoryHealth.appendChild(categoryHealthHeading);
+    const categoryHealthList = document.createElement("div");
+    renderCategoryHealth(categoryHealthList, bootstrap.categories, {
+      openTransferFor,
+      transferForm: categoryTransferForm,
+      onToggleTransfer: toggleCategoryTransfer,
+    });
+    categoryHealth.appendChild(categoryHealthList);
+    container.appendChild(categoryHealth);
 
     const incomeContainer = document.createElement("div");
     renderExpectedIncome(incomeContainer);

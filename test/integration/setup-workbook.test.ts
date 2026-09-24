@@ -124,8 +124,8 @@ describe("snapshot reader", () => {
     const result = readPlanningSnapshot(f.auth, clock, f.map);
     expect(result.health).toBe("HEALTHY"); expect(result.categories.Dining.activeReservations).toBe(100000); expect(result.categories.Dining.availableBudget).toBe(350000);
     expect(result.activeReservations).toEqual([
-      { amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
-      { amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { actionId: "p1", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { actionId: "p2", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
     ]);
   });
   it("rejects a stale same-day numeric result and missing category output", () => {

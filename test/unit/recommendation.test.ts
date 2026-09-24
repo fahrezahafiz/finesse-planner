@@ -67,8 +67,8 @@ describe("evaluatePurchase", () => {
     const snapshot = healthySnapshot({
       accounts: { Main: { currentBalance: parseMoney(700000) } },
       activeReservations: [
-        { amount: parseMoney(200000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-24") },
-        { amount: parseMoney(200000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-25") },
+        { actionId: "r1", amount: parseMoney(200000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-24") },
+        { actionId: "r2", amount: parseMoney(200000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-25") },
       ],
     });
     const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(500001) }));
@@ -125,7 +125,7 @@ describe("evaluatePurchase", () => {
       categories: { Shopping: { ...healthySnapshot().categories.Shopping, availableBudget: Number.MAX_SAFE_INTEGER } },
       accounts: { Main: { currentBalance: parseMoney(Number.MAX_SAFE_INTEGER) } },
       confirmedIncome: [{ amount: parseMoney(4), destinationAccount: "Main", expectedDate: parseLocalDate("2026-09-24") }],
-      activeReservations: [{ amount: parseMoney(Number.MAX_SAFE_INTEGER), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-24") }],
+      activeReservations: [{ actionId: "r1", amount: parseMoney(Number.MAX_SAFE_INTEGER), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-24") }],
     });
     const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(5) }));
     expect(decision.verdict).toBe("NOT_RECOMMENDED");

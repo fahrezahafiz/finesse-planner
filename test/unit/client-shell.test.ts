@@ -146,7 +146,7 @@ describe("client shell placeholder content", () => {
       createStore(
         readyState({
           bootstrap: bootstrapFixture({
-            activeReservations: [{ amount: 50001, paymentAccount: "BCA", plannedDate: "2026-09-25" }],
+            activeReservations: [{ actionId: "plan-1", amount: 50001, paymentAccount: "BCA", plannedDate: "2026-09-25" }],
           }),
         }),
       ),

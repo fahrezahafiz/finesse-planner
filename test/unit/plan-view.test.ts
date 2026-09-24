@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/dom";
+import { fireEvent, screen, waitFor, within } from "@testing-library/dom";
 import { createApp, resetApp } from "../../src/client/client";
 import { mountShell, resetViewRegistry } from "../../src/client/render";
 import type { ScriptRunner } from "../../src/client/api";
@@ -239,7 +239,13 @@ describe("plan-view: active reservation actions", () => {
           createdAt: "2026-09-24T00:00:00+07:00",
           completedAt: null,
         },
-        planningState: bootstrapFixture({ safeToPlanAmount: 650000 }),
+        // Realistic server behavior: a RESERVED plan appears in the recomputed planningState's
+        // activeReservations, carrying its own actionId (this is what Finding 3's fix threads
+        // through) - matches "action-2" above, the id the Cancel/Complete assertions rely on.
+        planningState: bootstrapFixture({
+          safeToPlanAmount: 650000,
+          activeReservations: [{ actionId: "action-2", amount: 100000, paymentAccount: "Cash", plannedDate: "2026-09-26" }],
+        }),
       }),
     );
     const checkPurchaseRpc = vi.fn().mockResolvedValue(
@@ -292,6 +298,113 @@ describe("plan-view: active reservation actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm complete" }));
 
     await waitFor(() => expect(completePlanRpc).toHaveBeenCalledWith(expect.objectContaining({ actionId: "action-2" })));
+  });
+
+  it("lets the user cancel a reservation from a prior session (e.g. after a page reload), using the server-provided actionId", async () => {
+    // No reserve/override call ever happens in this test - the reservation is present only because
+    // the initial bootstrap (as if freshly loaded from the server) already carries it, the way a
+    // reload would. Before Finding 3's fix, plan-view.ts only offered Cancel/Complete for plans
+    // tracked in its client-side sessionPlans array, so a reload-sourced reservation like this one
+    // had no working action - this proves that gap is closed.
+    const cancelPlanRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "plan-from-reload",
+        result: {
+          actionId: "plan-from-reload",
+          item: "Groceries",
+          category: "Dining",
+          paymentAccount: "Cash",
+          amount: 75000,
+          plannedDate: "2026-09-27",
+          status: "CANCELLED",
+          verdict: "RECOMMENDED",
+          failedGuardrails: [],
+          overrideReason: "",
+          createdAt: "2026-09-20T00:00:00+07:00",
+          completedAt: null,
+        },
+        planningState: bootstrapFixture({ safeToPlanAmount: 725000 }),
+      }),
+    );
+    mount(
+      fakeRunner({ cancelPlanRpc }),
+      bootstrapFixture({
+        activeReservations: [{ actionId: "plan-from-reload", amount: 75000, paymentAccount: "Cash", plannedDate: "2026-09-27" }],
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByText(/Rp75\.000 from Cash/)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel reservation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancel" }));
+
+    await waitFor(() => expect(cancelPlanRpc).toHaveBeenCalledWith(expect.objectContaining({ actionId: "plan-from-reload" })));
+  });
+});
+
+describe("plan-view: category health", () => {
+  it("shows remaining amounts and a consumption bar per category, immediately below active reservations, with a direct Transfer budget action", () => {
+    mount(fakeRunner({}));
+
+    expect(screen.getByText("Rp250.000 remaining of Rp300.000")).toBeTruthy();
+    expect(screen.getByText("Rp150.000 remaining of Rp200.000")).toBeTruthy();
+
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(2); // Shopping + Dining only - Savings is never a spendable category
+    expect(screen.getAllByRole("button", { name: "Transfer budget" }).length).toBeGreaterThan(0);
+
+    // "Category health" comes after "Active reservations" in document order (spec section 11:
+    // "immediately below active plans, one short scroll away").
+    const headings = Array.from(document.querySelectorAll("h2")).map(h => h.textContent);
+    const reservationsIndex = headings.indexOf("Active reservations");
+    const categoryHealthIndex = headings.indexOf("Category health");
+    expect(reservationsIndex).toBeGreaterThanOrEqual(0);
+    expect(categoryHealthIndex).toBeGreaterThan(reservationsIndex);
+  });
+
+  it("creates a transfer directly from the Plan tab's category health section, without navigating away", async () => {
+    const createTransferRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "transfer-1",
+        result: {
+          actionId: "transfer-1",
+          fromCategory: "Shopping",
+          toCategory: "Dining",
+          amount: 50000,
+          reason: "Cover dinner",
+          relatedPlanId: "",
+          status: "ACTIVE",
+          createdAt: "2026-09-24T00:00:00+07:00",
+          reversalReference: "",
+        },
+        planningState: bootstrapFixture(),
+      }),
+    );
+    mount(fakeRunner({ createTransferRpc }));
+
+    function findShoppingCard(): HTMLElement {
+      const card = Array.from(document.querySelectorAll<HTMLElement>("li.card")).find(
+        li => li.querySelector(".category-name")?.textContent === "Shopping",
+      );
+      if (!card) throw new Error("Shopping card not found");
+      return card;
+    }
+
+    fireEvent.click(within(findShoppingCard()).getByRole("button", { name: "Transfer budget" }));
+
+    const shoppingCard = findShoppingCard();
+    const fromSelect = within(shoppingCard).getByLabelText("From category") as HTMLSelectElement;
+    expect(fromSelect.value).toBe("Shopping");
+    fireEvent.change(within(shoppingCard).getByLabelText("To category"), { target: { value: "Dining" } });
+    fireEvent.input(within(shoppingCard).getByLabelText("Amount"), { target: { value: "50000" } });
+    fireEvent.click(within(shoppingCard).getByRole("button", { name: "Create transfer" }));
+    fireEvent.click(within(shoppingCard).getByRole("button", { name: "Confirm transfer" }));
+
+    await waitFor(() => expect(createTransferRpc).toHaveBeenCalledWith(
+      expect.objectContaining({ fromCategory: "Shopping", toCategory: "Dining", amount: 50000 }),
+    ));
+    // Still on the Plan tab - the store's "view" was never changed by this flow.
+    expect(screen.getByRole("form", { name: "Check a purchase" })).toBeTruthy();
   });
 });
 

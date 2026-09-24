@@ -178,6 +178,75 @@ describe("transfers-view: reversal", () => {
       expect.objectContaining({ transferId: "transfer-1" }),
     ));
   });
+
+  it("does not resubmit while a reversal is pending, and reuses the same actionId on a failed-then-retried reversal", async () => {
+    const getHistoryRpc = vi.fn().mockResolvedValue(ok(emptyHistory));
+    const getInsightsRpc = vi.fn().mockResolvedValue(ok({ transferPatterns: { windowMonths: [], recurringRecipients: [], recurringDonors: [] }, baselineReview: { windowMonths: [], changes: [] } }));
+    const createTransferRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "transfer-1",
+        result: {
+          actionId: "transfer-1",
+          fromCategory: "Shopping",
+          toCategory: "Dining",
+          amount: 30000,
+          reason: "Balance",
+          relatedPlanId: "",
+          status: "ACTIVE",
+          createdAt: "2026-09-24T00:00:00+07:00",
+          reversalReference: "",
+        },
+        planningState: bootstrapFixture(),
+      }),
+    );
+    let firstAttemptActionId: string | undefined;
+    const reverseTransferRpc = vi.fn().mockImplementation((command: { actionId: string; transferId: string }) => {
+      if (!firstAttemptActionId) {
+        firstAttemptActionId = command.actionId;
+        return Promise.reject({ code: "LOCK_TIMEOUT", message: "Try again." });
+      }
+      return Promise.resolve(
+        ok({
+          actionId: command.actionId,
+          result: {
+            actionId: command.actionId,
+            fromCategory: "Dining",
+            toCategory: "Shopping",
+            amount: 30000,
+            reason: "Reversal of transfer-1",
+            relatedPlanId: "",
+            status: "REVERSED",
+            createdAt: "2026-09-24T01:00:00+07:00",
+            reversalReference: "transfer-1",
+          },
+          planningState: bootstrapFixture(),
+        }),
+      );
+    });
+    mount(fakeRunner({ getHistoryRpc, getInsightsRpc, createTransferRpc, reverseTransferRpc }));
+    await waitFor(() => expect(getHistoryRpc).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Create a transfer" }));
+    fireEvent.change(screen.getByLabelText("From category"), { target: { value: "Shopping" } });
+    fireEvent.change(screen.getByLabelText("To category"), { target: { value: "Dining" } });
+    fireEvent.input(screen.getByLabelText("Amount"), { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(screen.getByText(/from Shopping to Dining/)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Reverse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm reversal" }));
+
+    await waitFor(() => expect(reverseTransferRpc).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText(/Try again\./)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Reverse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm reversal" }));
+
+    await waitFor(() => expect(reverseTransferRpc).toHaveBeenCalledTimes(2));
+    const [firstCall, secondCall] = reverseTransferRpc.mock.calls;
+    expect((secondCall[0] as { actionId: string }).actionId).toBe((firstCall[0] as { actionId: string }).actionId);
+  });
 });
 
 describe("transfers-view: insights", () => {
@@ -260,5 +329,58 @@ describe("transfers-view: insights", () => {
         ],
       }),
     ));
+  });
+
+  it("does not resubmit while a baseline review is pending, and reuses the same actionId on a failed-then-retried apply", async () => {
+    const getHistoryRpc = vi.fn().mockResolvedValue(ok(emptyHistory));
+    const getInsightsRpc = vi.fn().mockResolvedValue(
+      ok({
+        transferPatterns: { windowMonths: [], recurringRecipients: [], recurringDonors: [] },
+        baselineReview: {
+          windowMonths: ["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"],
+          changes: [{ category: "Dining", direction: "INCREASE", amount: 100000, frequency: 4, averageMonthlyNet: 100000 }],
+        },
+      }),
+    );
+    let firstAttemptActionId: string | undefined;
+    const applyBaselineReviewRpc = vi.fn().mockImplementation((command: { actionId: string }) => {
+      if (!firstAttemptActionId) {
+        firstAttemptActionId = command.actionId;
+        return Promise.reject({ code: "LOCK_TIMEOUT", message: "Try again." });
+      }
+      return Promise.resolve(
+        ok({
+          actionId: command.actionId,
+          result: {
+            appliedAt: "2026-09-24T00:00:00+07:00",
+            appliedBy: "icanhafiz@gmail.com",
+            reason: "Confirmed",
+            changes: [{ category: "Dining", previousAmount: 200000, newAmount: 300000 }],
+          },
+          planningState: bootstrapFixture(),
+        }),
+      );
+    });
+    mount(fakeRunner({ getHistoryRpc, getInsightsRpc, applyBaselineReviewRpc }));
+
+    await waitFor(() => expect(screen.getByText(/Dining: suggest increase of Rp100\.000/)).toBeTruthy());
+
+    fireEvent.input(screen.getByLabelText("Dining current baseline amount"), { target: { value: "200000" } });
+    fireEvent.input(screen.getByLabelText("Dining new baseline amount"), { target: { value: "300000" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Review and apply" }));
+    fireEvent.input(screen.getByLabelText("Reason"), { target: { value: "Confirmed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm baseline change" }));
+
+    await waitFor(() => expect(applyBaselineReviewRpc).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText(/Try again\./)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Review and apply" }));
+    fireEvent.input(screen.getByLabelText("Reason"), { target: { value: "Confirmed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm baseline change" }));
+
+    await waitFor(() => expect(applyBaselineReviewRpc).toHaveBeenCalledTimes(2));
+    const [firstCall, secondCall] = applyBaselineReviewRpc.mock.calls;
+    expect((secondCall[0] as { actionId: string }).actionId).toBe((firstCall[0] as { actionId: string }).actionId);
   });
 });

@@ -208,7 +208,7 @@ describe("getBootstrap", () => {
       daysRemaining: 8,
     });
     expect(state.safeToPlanAmount).toBeTypeOf("number");
-    expect(state.activeReservations).toEqual([{ amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" }]);
+    expect(state.activeReservations).toEqual([{ actionId: "plan-1", amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" }]);
     expect(state.categories).toEqual(expect.arrayContaining([{ category: "Dining", adjustedBudget: 600000, availableBudget: 300000 }]));
   });
 
