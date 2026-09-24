@@ -9,10 +9,11 @@ export const CLOSED_MONTH_WINDOW = 6;
 
 /**
  * A category must show a nonzero net direction (recipient or donor) in at least this many of the
- * six closed months before it counts as a recurring pattern at all. One occurrence is a single
- * event, not a pattern; two or more is the minimum evidence for "recurring".
+ * six closed months before it counts as a recurring pattern at all. Per spec section 10: flag a
+ * recurring recipient/donor only when net budget moves that direction in at least three of the last
+ * six closed months.
  */
-const MINIMUM_RECURRING_FREQUENCY = 2;
+const MINIMUM_RECURRING_FREQUENCY = 3;
 
 export interface RecurringCategoryPattern {
   readonly category: string;

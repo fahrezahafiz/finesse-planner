@@ -59,24 +59,35 @@ describe("analyzeTransferPatterns", () => {
     expect(result.windowMonths).toEqual(["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]);
   });
 
-  it("flags a category recurring in exactly two of six closed months", () => {
+  it("flags a category recurring in exactly three of six closed months", () => {
+    const result = analyzeTransferPatterns(historyForMonths({
+      "2026-04": { Shopping: 50000 },
+      "2026-06": { Shopping: 100000 },
+      "2026-07": { Shopping: 150000 },
+    }), parseYearMonth("2026-09"));
+
+    expect(result.recurringRecipients[0]).toMatchObject({ category: "Shopping", frequency: 3, total: 300000, averageMonthlyNet: 100000 });
+  });
+
+  it("does not flag a category recurring in only two of six closed months", () => {
     const result = analyzeTransferPatterns(historyForMonths({
       "2026-04": { Shopping: 50000 },
       "2026-07": { Shopping: 150000 },
     }), parseYearMonth("2026-09"));
 
-    expect(result.recurringRecipients[0]).toMatchObject({ category: "Shopping", frequency: 2, total: 200000, averageMonthlyNet: 100000 });
+    expect(result.recurringRecipients).toEqual([]);
   });
 
   it("excludes the current open month from the closed-month totals", () => {
     const result = analyzeTransferPatterns(historyForMonths({
       "2026-04": { Shopping: 100000 },
+      "2026-06": { Shopping: 50000 },
       "2026-07": { Shopping: 150000 },
       "2026-09": { Shopping: 999999999 },
     }), parseYearMonth("2026-09"));
 
     expect(result.windowMonths).not.toContain("2026-09");
-    expect(result.recurringRecipients[0]).toMatchObject({ category: "Shopping", frequency: 2, total: 250000 });
+    expect(result.recurringRecipients[0]).toMatchObject({ category: "Shopping", frequency: 3, total: 300000 });
   });
 
   it("does not flag a category that occurs only once in the window", () => {
@@ -92,12 +103,13 @@ describe("analyzeTransferPatterns", () => {
     const history = [
       original,
       reversingEntry,
+      transfer("2026-03", "Dining", "Shopping", 100000),
       transfer("2026-06", "Dining", "Shopping", 100000),
       transfer("2026-08", "Dining", "Shopping", 200000),
     ];
     const result = analyzeTransferPatterns(history, parseYearMonth("2026-09"));
     const shopping = result.recurringRecipients.find(r => r.category === "Shopping");
-    expect(shopping).toMatchObject({ frequency: 2, total: 300000, averageMonthlyNet: 150000 });
+    expect(shopping).toMatchObject({ frequency: 3, total: 400000, averageMonthlyNet: 133333 });
   });
 
   it("excludes a lone REVERSED-status row with no reversing counterpart from recurrence totals", () => {
@@ -110,15 +122,16 @@ describe("analyzeTransferPatterns", () => {
     // from this history slice). Only the `status === "ACTIVE"` filter -- not any arithmetic cancellation
     // -- can zero this row out, so this proves the filter is doing real work.
     const history = [
-      transfer("2026-04", "Dining", "Shopping", 500000, "REVERSED"),
+      transfer("2026-03", "Dining", "Shopping", 500000, "REVERSED"),
+      transfer("2026-05", "Dining", "Shopping", 100000),
       transfer("2026-06", "Dining", "Shopping", 100000),
       transfer("2026-08", "Dining", "Shopping", 200000),
     ];
     const result = analyzeTransferPatterns(history, parseYearMonth("2026-09"));
     const shopping = result.recurringRecipients.find(r => r.category === "Shopping");
-    // Only the two ACTIVE months count; the lone REVERSED 2026-04 row contributes zero and does not
-    // count toward frequency. A buggy implementation that ignored status would instead see frequency 3.
-    expect(shopping).toMatchObject({ frequency: 2, total: 300000, averageMonthlyNet: 150000 });
+    // Only the three ACTIVE months count; the lone REVERSED 2026-03 row contributes zero and does not
+    // count toward frequency. A buggy implementation that ignored status would instead see frequency 4.
+    expect(shopping).toMatchObject({ frequency: 3, total: 400000, averageMonthlyNet: 133333 });
   });
 
   it("flags a recurring donor symmetrically with recurring recipients", () => {
@@ -144,8 +157,9 @@ describe("analyzeTransferPatterns", () => {
 
   it("never flags the protected savings category even if it appears in transfer history", () => {
     const history = [
-      transfer("2026-04", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
-      transfer("2026-06", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-03", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-05", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-07", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
     ];
     const result = analyzeTransferPatterns(history, parseYearMonth("2026-09"));
     expect(result.recurringRecipients.some(r => r.category === PROTECTED_SAVINGS_CATEGORY)).toBe(false);
@@ -167,9 +181,11 @@ describe("proposeBaselineReview", () => {
     // Shopping's recipient evidence (avg 500000) far exceeds Dining's donor evidence (avg 50000).
     const history = [
       transfer("2026-03", "Freelance", "Shopping", 400000),
-      transfer("2026-05", "Bonus", "Shopping", 600000),
-      transfer("2026-07", "Dining", "Misc1", 50000),
-      transfer("2026-08", "Dining", "Misc2", 50000),
+      transfer("2026-04", "Bonus", "Shopping", 500000),
+      transfer("2026-05", "Windfall", "Shopping", 600000),
+      transfer("2026-06", "Dining", "Misc1", 50000),
+      transfer("2026-07", "Dining", "Misc2", 50000),
+      transfer("2026-08", "Dining", "Misc3", 50000),
     ];
     const result = proposeBaselineReview(history, parseYearMonth("2026-09"));
     const donorChange = result.changes.find(c => c.category === "Dining");
@@ -182,30 +198,36 @@ describe("proposeBaselineReview", () => {
     const history = [
       transfer("2026-03", "Groceries1", "Shopping", 40000),
       transfer("2026-05", "Groceries2", "Shopping", 60000),
+      transfer("2026-07", "Groceries3", "Shopping", 20000),
       transfer("2026-04", "Leisure1", "Entertainment", 30000),
       transfer("2026-06", "Leisure2", "Entertainment", 50000),
-      transfer("2026-07", "Dining", "MiscA", 100000),
-      transfer("2026-08", "Dining", "MiscB", 100000),
+      transfer("2026-08", "Leisure3", "Entertainment", 30000),
+      transfer("2026-03", "Dining", "MiscA", 50000),
+      transfer("2026-04", "Dining", "MiscB", 50000),
+      transfer("2026-05", "Dining", "MiscC", 50000),
     ];
     const result = proposeBaselineReview(history, parseYearMonth("2026-09"));
 
     const net = result.changes.reduce((sum, c) => sum + (c.direction === "INCREASE" ? c.amount : -c.amount), 0);
     expect(net).toBe(0);
     expect(result.changes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ category: "Shopping", direction: "INCREASE", amount: 50000 }),
-      expect.objectContaining({ category: "Entertainment", direction: "INCREASE", amount: 40000 }),
-      expect.objectContaining({ category: "Dining", direction: "DECREASE", amount: 90000 }),
+      expect.objectContaining({ category: "Shopping", direction: "INCREASE", amount: 40000 }),
+      expect.objectContaining({ category: "Entertainment", direction: "INCREASE", amount: 10000 }),
+      expect.objectContaining({ category: "Dining", direction: "DECREASE", amount: 50000 }),
     ]));
     expect(result.changes).toHaveLength(3);
   });
 
   it("excludes a category that is a recurring recipient in some months and a recurring donor in others", () => {
-    // Shopping funds Entertainment twice, and separately receives funding from Dining twice: its
-    // evidence is inconsistent, so it must not appear as either an increase or a decrease suggestion.
+    // Shopping funds Entertainment in three months, and separately receives funding from Dining in
+    // three other months: its evidence is inconsistent, so it must not appear as either an increase
+    // or a decrease suggestion.
     const history = [
       transfer("2026-03", "Shopping", "Entertainment", 50000),
+      transfer("2026-04", "Shopping", "Entertainment", 50000),
       transfer("2026-05", "Shopping", "Entertainment", 50000),
       transfer("2026-06", "Dining", "Shopping", 60000),
+      transfer("2026-07", "Dining", "Shopping", 60000),
       transfer("2026-08", "Dining", "Shopping", 60000),
     ];
     const result = proposeBaselineReview(history, parseYearMonth("2026-09"));
@@ -214,9 +236,11 @@ describe("proposeBaselineReview", () => {
 
   it("never proposes the protected savings category as a donor or recipient", () => {
     const history = [
-      transfer("2026-04", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
-      transfer("2026-06", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
-      transfer("2026-07", "Dining", "Shopping", 100000),
+      transfer("2026-03", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-05", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-07", "Dining", PROTECTED_SAVINGS_CATEGORY, 100000),
+      transfer("2026-04", "Dining", "Shopping", 100000),
+      transfer("2026-06", "Dining", "Shopping", 100000),
       transfer("2026-08", "Dining", "Shopping", 100000),
     ];
     const result = proposeBaselineReview(history, parseYearMonth("2026-09"));
