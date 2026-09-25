@@ -25,7 +25,7 @@ describe("Acceptance scenario 1: a within-budget dinner is recommended and reser
 
     const state = unwrap(f.endpoints.getBootstrap(undefined));
     expect(state.activeReservations).toEqual([
-      { actionId: "plan-1", amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { actionId: "plan-1", item: "Headphones", category: "Dining", amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
     ]);
   });
 });

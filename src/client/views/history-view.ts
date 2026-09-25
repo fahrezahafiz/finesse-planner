@@ -105,12 +105,12 @@ export function createHistoryRenderer(_store: Store, api: ApiClient): ViewRender
 
     const transfersSection = document.createElement("section");
     const transfersHeading = document.createElement("h2");
-    transfersHeading.textContent = "Reversed transfers";
+    transfersHeading.textContent = "Transfer history";
     transfersSection.appendChild(transfersHeading);
 
     if (history.transfers.length === 0) {
       const empty = document.createElement("p");
-      empty.textContent = "No reversed transfers yet.";
+      empty.textContent = "No transfers yet.";
       transfersSection.appendChild(empty);
     } else {
       const list = document.createElement("ul");
@@ -119,7 +119,7 @@ export function createHistoryRenderer(_store: Store, api: ApiClient): ViewRender
         item.textContent =
           `${formatIDR(transfer.amount)} from ${transfer.fromCategory} to ${transfer.toCategory}` +
           (transfer.reason ? ` (${transfer.reason})` : "") +
-          ` - ${transfer.status}`;
+          ` - ${transfer.status}, ${transfer.month}, by ${transfer.createdBy}`;
         list.appendChild(item);
       }
       transfersSection.appendChild(list);

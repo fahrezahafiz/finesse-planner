@@ -100,6 +100,21 @@ describe("client shell navigation", () => {
 });
 
 describe("client shell loading and error states", () => {
+  it("renders workbook failures as unavailable instead of zero-money planning data", () => {
+    mountShell(root(), createStore(readyState({
+      bootstrap: bootstrapFixture({
+        health: "FORMULA_ERROR",
+        protectedSavings: null as never,
+        fundedAmount: null as never,
+        safeToPlanAmount: null as never,
+      }),
+    })));
+
+    expect(screen.getByText(/workbook needs attention/i)).toBeTruthy();
+    expect(screen.queryByText(/Rp0/)).toBeNull();
+    expect(screen.queryByRole("form", { name: "Check a purchase" })).toBeNull();
+  });
+
   it("announces loading via the aria-live status region before bootstrap resolves", () => {
     mountShell(root(), createStore({ status: "loading", bootstrap: null, error: null }));
 

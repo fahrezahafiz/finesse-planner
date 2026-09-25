@@ -46,7 +46,9 @@ export function appsScriptDeps(): ServerDeps {
     workbookId,
     now: () => new Date(),
     sourceMap: configuredSourceMap(),
-    lock: LockService.getDocumentLock(),
+    // Apps Script document locks are null for web-app executions. This deployment targets one
+    // configured workbook, so a script-wide lock gives every caller the required shared mutex.
+    lock: LockService.getScriptLock(),
   };
 }
 

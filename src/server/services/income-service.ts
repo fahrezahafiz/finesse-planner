@@ -23,9 +23,9 @@ export function createExpectedIncome(command: unknown, deps: IncomeServiceDeps):
   const proposal = parseExpectedIncomeProposal(command);
   return withDocumentLock(deps.lock, () => {
     const repository = new IncomeRepository(deps.auth);
+    const snapshot = incomeMaintenanceSnapshot(deps);
     const previous = findAppliedAction(repository.list(), proposal.actionId);
     if (previous) return previous;
-    const snapshot = currentSnapshot(deps);
     if (!Object.hasOwnProperty.call(snapshot.accounts, proposal.destinationAccount)) throw new DomainError("INVALID_INPUT");
     const income = newExpectedIncome(proposal, deps.clock, deps.auth.email);
     repository.append(income);
@@ -45,11 +45,11 @@ export function cancelExpectedIncome(command: unknown, deps: IncomeServiceDeps):
 function transitionIncomeStatus(command: unknown, deps: IncomeServiceDeps, next: IncomeStatus): ExpectedIncome {
   const actionId = parseActionId(inputObject(command).actionId);
   return withDocumentLock(deps.lock, () => {
+    incomeMaintenanceSnapshot(deps);
     const repository = new IncomeRepository(deps.auth);
     const current = repository.list().find(entry => entry.actionId === actionId);
     if (!current) throw new DomainError("INVALID_INPUT");
     if (current.status === next) return current;
-    currentSnapshot(deps); // Fail closed on an unhealthy workbook before any write.
     const updated = { ...current, status: transitionIncome(current.status, next) };
     repository.update(updated);
     flush(deps);
@@ -57,9 +57,9 @@ function transitionIncomeStatus(command: unknown, deps: IncomeServiceDeps, next:
   });
 }
 
-function currentSnapshot(deps: IncomeServiceDeps): PlanningSnapshot {
+function incomeMaintenanceSnapshot(deps: IncomeServiceDeps): PlanningSnapshot {
   const snapshot = readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap);
-  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
   return snapshot;
 }
 

@@ -63,7 +63,24 @@ describe("evaluatePurchase", () => {
     expect(decision.savings).toEqual({ passed: false, shortfall: 1 });
   });
 
-  it("subtracts only earlier-or-equal active reservations from account liquidity", () => {
+  it("includes overruns in every category when protecting savings", () => {
+    const base = healthySnapshot();
+    const snapshot = healthySnapshot({
+      actualIncome: parseMoney(1200000),
+      totalAdjustedBudgets: parseMoney(1000000),
+      protectedSavingsTarget: parseMoney(200000),
+      categories: {
+        Dining: { ...base.categories.Shopping, adjustedBudget: parseMoney(600000), activeReservations: parseMoney(700000), availableBudget: -100000 },
+        Shopping: { ...base.categories.Shopping, adjustedBudget: parseMoney(400000), availableBudget: 400000 },
+      },
+    });
+
+    const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(100000) }));
+
+    expect(decision.savings).toEqual({ passed: false, shortfall: 100000 });
+  });
+
+  it("protects both earlier and later active reservations in the account schedule", () => {
     const snapshot = healthySnapshot({
       accounts: { Main: { currentBalance: parseMoney(700000) } },
       activeReservations: [
@@ -72,7 +89,7 @@ describe("evaluatePurchase", () => {
       ],
     });
     const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(500001) }));
-    expect(decision.account).toEqual({ passed: false, shortfall: 1 });
+    expect(decision.account).toEqual({ passed: false, shortfall: 200001 });
   });
 
   it("does not count confirmed income after the planned date", () => {
@@ -90,6 +107,31 @@ describe("evaluatePurchase", () => {
       confirmedIncome: [{ amount: parseMoney(1), destinationAccount: "Main", expectedDate: parseLocalDate("2026-09-24") }],
     });
     expect(evaluatePurchase(snapshot, proposal({ amount: parseMoney(500000) })).account.passed).toBe(true);
+  });
+
+  it("does not let an earlier purchase consume cash reserved for a later purchase", () => {
+    const snapshot = healthySnapshot({
+      accounts: { Main: { currentBalance: parseMoney(300000) } },
+      activeReservations: [
+        { actionId: "later", amount: parseMoney(300000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-30") },
+      ],
+    });
+
+    const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(300000) }));
+
+    expect(decision.account).toEqual({ passed: false, shortfall: 300000 });
+  });
+
+  it("allows later confirmed income to fund a later reservation", () => {
+    const snapshot = healthySnapshot({
+      accounts: { Main: { currentBalance: parseMoney(300000) } },
+      confirmedIncome: [{ amount: parseMoney(300000), destinationAccount: "Main", expectedDate: parseLocalDate("2026-09-28") }],
+      activeReservations: [
+        { actionId: "later", amount: parseMoney(300000), paymentAccount: "Main", plannedDate: parseLocalDate("2026-09-30") },
+      ],
+    });
+
+    expect(evaluatePurchase(snapshot, proposal({ amount: parseMoney(300000) })).account.passed).toBe(true);
   });
 
   it("keeps underfunded planning months non-recommendable before later failures", () => {

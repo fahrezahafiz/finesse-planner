@@ -104,7 +104,7 @@ export function endpointFixture(options: EndpointFixtureOptions = {}) {
     const reconciliation = rows.reduce((sum, row) => sum + (row[2] as number), 0) - rows.reduce((sum, row) => sum + (row[3] as number), 0);
     summary.getRange("K1:K12").setValues([
       [actualIncome], [futureIncome], [recognized], [protectedSavings], [totalBaseline], [totalAdjusted],
-      [headroom], [headroom], ["HEALTHY"], [reconciliation], [month], [today],
+      [headroom], [headroom], [headroom >= 0 ? "HEALTHY" : "INVALID"], [reconciliation], [month], [today],
     ]);
   }
   flush();

@@ -31,6 +31,24 @@ export class TransferRepository {
     this.write(entry.row, transfer);
   }
 
+  /** Atomically appends a reversal row and flips its original row in one range write. */
+  commitReversal(original: Transfer, reversal: Transfer): void {
+    const entries = this.entries();
+    const originalEntry = entries.find(entry => entry.transfer.actionId === original.actionId);
+    if (!originalEntry || originalEntry.transfer.status !== "ACTIVE") invalid();
+    const existing = entries.find(entry => entry.transfer.actionId === reversal.actionId);
+    if (existing && existing.transfer.reversalReference !== original.actionId) invalid();
+    const lastRow = Math.max(1, ...entries.map(entry => entry.row));
+    if (!existing && lastRow >= LAST_PLANNING_ROW) invalid();
+    const range = this.sheet().getRange(`A2:K${LAST_PLANNING_ROW}`);
+    const values = range.getValues();
+    values[originalEntry.row - 2] = encodeTransfer({ ...original, status: "REVERSED" });
+    if (!existing) values[lastRow - 1] = encodeTransfer(reversal);
+    range.setValues(values.map(row => row.map(value =>
+      typeof value === "string" && value.startsWith("=") ? `'${value}` : value,
+    )));
+  }
+
   private sheet() {
     assertPlanningHeaders(this.auth.workbook);
     const sheet = this.auth.workbook.getSheetByName("Transfer Budget");

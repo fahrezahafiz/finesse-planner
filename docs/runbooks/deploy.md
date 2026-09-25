@@ -2,7 +2,8 @@
 
 Run this only after `docs/runbooks/development-copy.md` is fully complete: the development copy has
 a calibrated source map, a healthy formula scan, and passing synthetic acceptance transactions, and
-`npm run verify-release` passes against this repository. This runbook is what turns that verified
+`npm run check` passes against this repository. The final `npm run verify-release` is deliberately
+post-deployment because it requires truthful production smoke-test attestations. This runbook is what turns that verified
 state into a real production release. It is written so a household member without a software
 background can follow it exactly; do not skip or reorder steps.
 

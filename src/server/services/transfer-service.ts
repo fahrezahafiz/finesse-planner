@@ -2,7 +2,7 @@ import { DomainError } from "../../domain/errors";
 import { inputObject, parseActionId } from "../../domain/plans";
 import {
   assertReversibleMonth, newTransfer, parseTransferProposal, reversingTransfer,
-  transitionTransfer, validateReversal, validateTransfer, type Transfer,
+  validateReversal, validateTransfer, type Transfer,
 } from "../../domain/transfers";
 import type { RequestClock } from "../../domain/time";
 import type { PlanningSnapshot } from "../../domain/types";
@@ -26,9 +26,9 @@ export function createTransfer(command: unknown, deps: TransferServiceDeps): Tra
   const proposal = parseTransferProposal(command);
   return withDocumentLock(deps.lock, () => {
     const repository = new TransferRepository(deps.auth);
+    const snapshot = currentSnapshot(deps);
     const previous = findAppliedAction(repository.list(), proposal.actionId);
     if (previous) return previous;
-    const snapshot = currentSnapshot(deps);
     validateTransfer(snapshot, proposal);
     const transfer = newTransfer(proposal, deps.clock, deps.auth.email);
     repository.append(transfer);
@@ -48,8 +48,18 @@ export function reverseTransfer(command: unknown, deps: TransferServiceDeps): Tr
     if (!original) throw new DomainError("INVALID_INPUT");
     const existingReversal = findAppliedAction(entries, actionId);
     if (existingReversal) {
-      // Resume a reversal whose audit row was persisted but whose original-status flip was interrupted.
-      if (original.status === "ACTIVE") repository.update({ ...original, status: transitionTransfer(original.status, "REVERSED") });
+      if (existingReversal.reversalReference !== original.actionId
+        || existingReversal.fromCategory !== original.toCategory
+        || existingReversal.toCategory !== original.fromCategory
+        || existingReversal.amount !== original.amount) throw new DomainError("INVALID_INPUT");
+      if (original.status === "ACTIVE") {
+        assertReversibleMonth(original.month, deps.clock.month);
+        const snapshot = currentSnapshot(deps);
+        const recipient = snapshot.categories[original.toCategory];
+        if (!recipient) throw new DomainError("INVALID_INPUT");
+        validateReversal(recipient.availableBudget, original.amount);
+        repository.commitReversal(original, existingReversal);
+      }
       flush(deps);
       return existingReversal;
     }
@@ -60,8 +70,7 @@ export function reverseTransfer(command: unknown, deps: TransferServiceDeps): Tr
     if (!recipient) throw new DomainError("INVALID_INPUT");
     validateReversal(recipient.availableBudget, original.amount);
     const reversal = reversingTransfer(original, actionId, deps.clock, deps.auth.email);
-    repository.append(reversal);
-    repository.update({ ...original, status: transitionTransfer(original.status, "REVERSED") });
+    repository.commitReversal(original, reversal);
     flush(deps);
     return reversal;
   });

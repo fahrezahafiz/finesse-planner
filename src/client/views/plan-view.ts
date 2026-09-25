@@ -439,7 +439,8 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
         const text = document.createElement("span");
         text.textContent = sessionPlan
           ? `${sessionPlan.item}: ${formatIDR(sessionPlan.amount)} (${sessionPlan.category}, ${sessionPlan.paymentAccount}) - ${sessionPlan.status}`
-          : `${formatIDR(reservation.amount)} from ${reservation.paymentAccount} on ${formatLocalDate(reservation.plannedDate)}`;
+          : `${reservation.item ? `${reservation.item}${reservation.category ? ` (${reservation.category})` : ""}: ` : ""}` +
+            `${formatIDR(reservation.amount)} from ${reservation.paymentAccount} on ${formatLocalDate(reservation.plannedDate)}`;
         item.appendChild(text);
 
         const pending = rowPending.has(reservation.actionId);

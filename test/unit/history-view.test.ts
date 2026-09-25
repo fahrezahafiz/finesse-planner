@@ -112,7 +112,7 @@ describe("history-view", () => {
     mount(fakeRunner({ getHistoryRpc }));
 
     expect(await screen.findByText("No completed, cancelled, or expired plans yet.")).toBeTruthy();
-    expect(screen.getByText("No reversed transfers yet.")).toBeTruthy();
+    expect(screen.getByText("No transfers yet.")).toBeTruthy();
     expect(screen.getByText("No received or cancelled income yet.")).toBeTruthy();
   });
 });

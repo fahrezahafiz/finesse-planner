@@ -11,13 +11,8 @@ import type { IncomeView } from "../../server/view-models";
  * Plan/Budgets/Transfers/History), so this is mounted as a section within plan-view.ts rather than
  * getting its own tab. See plan-view.ts for where it's mounted and the full placement rationale.
  *
- * Known limitation (documented, not silently glossed over): `getHistoryRpc` only returns
- * *terminal*-status income (RECEIVED/CANCELLED), and no endpoint lists the currently-CONFIRMED
- * (pending) expected income entries in bulk - `PlanningStateView` doesn't carry them either. Task
- * 13 cannot add a new server endpoint (Task 11's contract is already committed), so "mark
- * received"/"cancel" actions are only offered for entries created earlier in *this browser
- * session* (tracked locally, since a creation's response hands back the entry's actionId). This
- * mirrors the same gap and the same resolution used for plan-view's active-reservation actions.
+ * Confirmed entries come from the authoritative bootstrap state, so both household accounts can
+ * manage them after reload. Session results are retained only until the refreshed state arrives.
  */
 
 interface IncomeDraft {
@@ -239,13 +234,16 @@ export function createExpectedIncomeSection(store: Store, api: ApiClient): (cont
 
     section.appendChild(form);
 
-    if (sessionIncome.length > 0) {
+    const authoritative = store.getState().bootstrap?.activeIncome ?? [];
+    const visibleIncome = [...authoritative, ...sessionIncome.filter(entry => !authoritative.some(saved => saved.actionId === entry.actionId))]
+      .filter(entry => entry.status === "CONFIRMED");
+    if (visibleIncome.length > 0) {
       const listHeading = document.createElement("h3");
-      listHeading.textContent = "Added this session";
+      listHeading.textContent = "Confirmed income";
       section.appendChild(listHeading);
 
       const list = document.createElement("ul");
-      for (const income of sessionIncome) {
+      for (const income of visibleIncome) {
         const item = document.createElement("li");
         const text = document.createElement("span");
         text.textContent = `${formatIDR(income.amount)} from ${income.source} to ${income.destinationAccount} on ${formatLocalDate(income.expectedDate)} - ${income.status}`;

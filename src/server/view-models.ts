@@ -30,6 +30,8 @@ export interface AccountBalanceView {
 
 export interface ActiveReservationView {
   readonly actionId: string;
+  readonly item?: string;
+  readonly category?: string;
   readonly amount: number;
   readonly paymentAccount: string;
   readonly plannedDate: string;
@@ -53,6 +55,8 @@ export interface PlanningStateView {
   readonly categories: readonly CategoryBudgetView[];
   readonly accounts: readonly AccountBalanceView[];
   readonly activeReservations: readonly ActiveReservationView[];
+  readonly activeTransfers?: readonly TransferView[];
+  readonly activeIncome?: readonly IncomeView[];
 }
 
 export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateView {
@@ -75,6 +79,8 @@ export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateVi
     })),
     activeReservations: snapshot.activeReservations.map(reservation => ({
       actionId: reservation.actionId,
+      item: reservation.item,
+      category: reservation.category,
       amount: reservation.amount,
       paymentAccount: reservation.paymentAccount,
       plannedDate: reservation.plannedDate,
@@ -116,6 +122,8 @@ export function toPlanView(plan: Plan): PlanView {
 
 export interface TransferView {
   readonly actionId: string;
+  readonly month: string;
+  readonly createdBy: string;
   readonly fromCategory: string;
   readonly toCategory: string;
   readonly amount: number;
@@ -129,6 +137,8 @@ export interface TransferView {
 export function toTransferView(transfer: Transfer): TransferView {
   return {
     actionId: transfer.actionId,
+    month: transfer.month,
+    createdBy: transfer.createdBy,
     fromCategory: transfer.fromCategory,
     toCategory: transfer.toCategory,
     amount: transfer.amount,
@@ -298,4 +308,14 @@ export interface MutationResultView<T> {
 export interface PurchaseCheckView {
   readonly decision: DecisionView;
   readonly corrections: readonly CorrectionView[];
+  readonly comparison?: {
+    readonly categoryWithout: number;
+    readonly categoryWith: number;
+    readonly savingsWithout: number;
+    readonly savingsWith: number;
+    readonly householdWithout: number;
+    readonly householdWith: number;
+    readonly accountWithout: number;
+    readonly accountWith: number;
+  };
 }

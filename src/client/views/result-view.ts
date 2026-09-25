@@ -123,11 +123,13 @@ export function renderPurchaseResult(container: HTMLElement, props: PurchaseResu
 
   const comparison = document.createElement("dl");
   comparison.className = "summary";
+  const serverComparison = check.comparison;
 
   const beforeCategory = before.categories.find(c => c.category === proposal.category);
   if (beforeCategory) {
-    const afterAvailable = beforeCategory.availableBudget - proposal.amount;
-    appendRow(comparison, `${proposal.category} budget (without)`, formatIDR(beforeCategory.availableBudget));
+    const withoutAvailable = serverComparison?.categoryWithout ?? beforeCategory.availableBudget;
+    const afterAvailable = serverComparison?.categoryWith ?? (beforeCategory.availableBudget - proposal.amount);
+    appendRow(comparison, `${proposal.category} budget (without)`, formatIDR(withoutAvailable));
     appendRow(
       comparison,
       `${proposal.category} budget (with)`,
@@ -136,24 +138,25 @@ export function renderPurchaseResult(container: HTMLElement, props: PurchaseResu
     );
   }
 
-  appendRow(
-    comparison,
-    "Protected savings (with this purchase)",
-    decision.savings.passed ? "Meets target" : `Short by ${formatIDR(decision.savings.shortfall)}`,
-    !decision.savings.passed,
-  );
+  if (serverComparison) {
+    appendRow(comparison, "Projected savings (without)", formatIDR(serverComparison.savingsWithout));
+    appendRow(comparison, "Projected savings (with)", formatIDR(serverComparison.savingsWith), !decision.savings.passed);
+  } else {
+    appendRow(comparison, "Protected savings (with this purchase)", decision.savings.passed ? "Meets target" : `Short by ${formatIDR(decision.savings.shortfall)}`, !decision.savings.passed);
+  }
 
-  appendRow(
-    comparison,
-    "Household funding (with this purchase)",
-    decision.household.passed ? "Within headroom" : `Short by ${formatIDR(decision.household.shortfall)}`,
-    !decision.household.passed,
-  );
+  if (serverComparison) {
+    appendRow(comparison, "Household headroom (without)", formatIDR(serverComparison.householdWithout));
+    appendRow(comparison, "Household headroom (with)", formatIDR(serverComparison.householdWith), !decision.household.passed);
+  } else {
+    appendRow(comparison, "Household funding (with this purchase)", decision.household.passed ? "Within headroom" : `Short by ${formatIDR(decision.household.shortfall)}`, !decision.household.passed);
+  }
 
   const beforeAccount = before.accounts.find(a => a.account === proposal.paymentAccount);
   if (beforeAccount) {
-    const afterBalance = beforeAccount.currentBalance - proposal.amount;
-    appendRow(comparison, `${proposal.paymentAccount} balance (without)`, formatIDR(beforeAccount.currentBalance));
+    const withoutBalance = serverComparison?.accountWithout ?? beforeAccount.currentBalance;
+    const afterBalance = serverComparison?.accountWith ?? (beforeAccount.currentBalance - proposal.amount);
+    appendRow(comparison, `${proposal.paymentAccount} balance (without)`, formatIDR(withoutBalance));
     appendRow(
       comparison,
       `${proposal.paymentAccount} balance (with)`,

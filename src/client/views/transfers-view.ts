@@ -23,11 +23,8 @@ import type {
  * per category (see budgets-view.ts) - the one shared helper this task needed, kept in this file
  * rather than a new module since transfers-view.ts is the form's natural owner.
  *
- * Known limitation: `getHistoryRpc` only returns REVERSED transfers (the past-tense record), and no
- * endpoint lists currently-ACTIVE transfers in bulk - see plan-view.ts's and
- * expected-income-view.ts's matching notes for active plans/income. "Current-month activity" here is
- * therefore transfers created or reversed during this browser session, tracked locally from each
- * mutation's own actionId-bearing response.
+ * Active transfers come from authoritative bootstrap state, with session results retained only
+ * until a refreshed state arrives.
  */
 
 function describeApiError(error: unknown): string {
@@ -442,10 +439,12 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
     activityHeading.textContent = "Current month transfers";
     activitySection.appendChild(activityHeading);
 
-    const activeSession = sessionTransfers.filter(t => t.status === "ACTIVE");
+    const authoritative = store.getState().bootstrap?.activeTransfers ?? [];
+    const activeSession = [...authoritative, ...sessionTransfers.filter(t => !authoritative.some(saved => saved.actionId === t.actionId))]
+      .filter(t => t.status === "ACTIVE");
     if (activeSession.length === 0) {
       const empty = document.createElement("p");
-      empty.textContent = "No transfers recorded this session yet.";
+      empty.textContent = "No active transfers this month.";
       activitySection.appendChild(empty);
     } else {
       const list = document.createElement("ul");
@@ -480,7 +479,7 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
         reversedSection.appendChild(empty);
       } else {
         const list = document.createElement("ul");
-        for (const transfer of history.transfers) renderTransferRow(list, transfer, false);
+        for (const transfer of history.transfers.filter(entry => entry.status === "REVERSED")) renderTransferRow(list, transfer, false);
         reversedSection.appendChild(list);
       }
       container.appendChild(reversedSection);

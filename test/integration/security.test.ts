@@ -133,6 +133,19 @@ describe("revoked access, missing OAuth scope, and formula errors after the UI l
 });
 
 describe("completion retry after an interrupted finalization (public RPC surface)", () => {
+  it("rechecks account liquidity before completing a reserved plan", () => {
+    const f = endpointFixture({ accountBalance: 300000 });
+    unwrap(f.endpoints.reservePurchaseRpc(planCommand({ amount: 300000 })));
+    f.sheets.get("backend")!.getRange("C2").setValue(1);
+    f.flush();
+
+    expect(f.endpoints.completePlanRpc({ actionId: "plan-1" })).toMatchObject({
+      ok: false,
+      error: { code: "ACCOUNT_LIQUIDITY_EXCEEDED" },
+    });
+    expect(f.expenses.getRange("B2:F50").getValues().filter((row: unknown[]) => row[1] !== "")).toHaveLength(0);
+  });
+
   // test/integration/completion-service.test.ts already covers this scenario directly against
   // completePlan(); this is the same scenario driven through completePlanRpc, the public surface a
   // real retrying client actually calls, rather than a second copy of the low-level test.
@@ -152,5 +165,45 @@ describe("completion retry after an interrupted finalization (public RPC surface
     const afterRetry = f.expenses.getRange("B2:F50").getValues().filter((row: unknown[]) => row[1] !== "");
     expect(afterRetry).toHaveLength(1); // no duplicate append on retry
     expect(f.sheetsController.metadataCount()).toBe(1);
+  });
+
+  it("reconciles an interrupted completion before expiring it after month rollover", () => {
+    const f = endpointFixture();
+    unwrap(f.endpoints.reservePurchaseRpc(planCommand()));
+    f.sheetsController.commitThenThrowNextBatchUpdate();
+    expect(f.endpoints.completePlanRpc({ actionId: "plan-1" })).toMatchObject({ ok: false });
+
+    f.advanceTo(new Date("2026-10-01T00:00:00Z"));
+    f.sheets.get("backend")!.getRange("G2").setValue("2026-10-01");
+    f.sheets.get("Catat - Pendapatan")!.getRange("B2").setValue(new Date("2026-10-01T00:00:00+07:00"));
+    f.flush();
+
+    unwrap(f.endpoints.getBootstrap(undefined));
+    expect(f.planRepository.list()[0]?.status).toBe("COMPLETED");
+    expect(f.expenses.getRange("B2:F50").getValues().filter((row: unknown[]) => row[1] !== "")).toHaveLength(1);
+  });
+});
+
+describe("repair and health boundaries", () => {
+  it("does not expire or serialize financial history when formulas are broken", () => {
+    const f = endpointFixture();
+    unwrap(f.endpoints.reservePurchaseRpc(planCommand()));
+    f.advanceTo(new Date("2026-10-01T00:00:00Z"));
+    f.summary.getRange("A2").setFormula("=1/0");
+
+    const state = unwrap(f.endpoints.getBootstrap(undefined));
+    expect(state.health).not.toBe("HEALTHY");
+    expect(f.planRepository.list()[0]?.status).toBe("RESERVED");
+    expect(f.endpoints.getHistoryRpc(undefined)).toMatchObject({ ok: false, error: { code: "WORKBOOK_SCHEMA_INVALID" } });
+  });
+
+  it("allows confirmed income to repair a structurally valid underfunded month", () => {
+    const f = endpointFixture({ actualIncome: 500000, protectedSavings: 200000 });
+    const before = unwrap(f.endpoints.getBootstrap(undefined));
+    expect(before.health).toBe("UNDERFUNDED");
+
+    const result = unwrap(f.endpoints.createExpectedIncomeRpc(incomeCommand({ amount: 800000 })));
+    expect(result.result.status).toBe("CONFIRMED");
+    expect(result.planningState.health).toBe("HEALTHY");
   });
 });

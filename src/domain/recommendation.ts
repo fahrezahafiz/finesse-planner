@@ -22,7 +22,12 @@ export function evaluatePurchase(snapshot: PlanningSnapshot, proposal: Proposal)
     const amount = exact(proposal.amount);
     const categoryAvailable = category ? exact(category.availableBudget) : 0n;
     const categoryResult = category ? resultFor(categoryAvailable - amount) : failed(proposal.amount);
-    const overage = category ? maximum(0n, amount - categoryAvailable) : amount;
+    const overage = Object.entries(snapshot.categories).reduce((sum, [name, value]) => {
+      const afterProposal = name === proposal.category
+        ? exact(value.availableBudget) - amount
+        : exact(value.availableBudget);
+      return sum + maximum(0n, -afterProposal);
+    }, category ? 0n : amount);
     const projectedSavings = exact(snapshot.actualIncome) + exact(snapshot.confirmedFutureIncome)
       - exact(snapshot.totalAdjustedBudgets) - overage;
     const savingsResult = resultFor(projectedSavings - exact(snapshot.protectedSavingsTarget));
@@ -59,8 +64,27 @@ export function plannedAccountLiquidity(snapshot: PlanningSnapshot, proposal: Pr
 }
 
 function accountGuardrail(snapshot: PlanningSnapshot, proposal: Proposal): GuardrailResult {
-  const liquidity = accountLiquidity(snapshot, proposal);
-  return liquidity === null ? failed(proposal.amount) : resultFor(liquidity - exact(proposal.amount));
+  const account = snapshot.accounts[proposal.paymentAccount];
+  if (!account) return failed(proposal.amount);
+  const dates = new Set<string>([
+    proposal.plannedDate,
+    ...snapshot.confirmedIncome.filter(entry => entry.destinationAccount === proposal.paymentAccount).map(entry => entry.expectedDate),
+    ...snapshot.activeReservations.filter(entry => entry.paymentAccount === proposal.paymentAccount).map(entry => entry.plannedDate),
+  ]);
+  let minimum = exact(account.currentBalance);
+  for (const date of [...dates].sort()) {
+    const income = snapshot.confirmedIncome
+      .filter(entry => entry.destinationAccount === proposal.paymentAccount && entry.expectedDate <= date)
+      .reduce((sum, entry) => sum + exact(entry.amount), 0n);
+    const reservations = snapshot.activeReservations
+      .filter(entry => entry.paymentAccount === proposal.paymentAccount && entry.plannedDate <= date)
+      .reduce((sum, entry) => sum + exact(entry.amount), 0n);
+    const proposed = proposal.plannedDate <= date ? exact(proposal.amount) : 0n;
+    minimum = minimum < exact(account.currentBalance) + income - reservations - proposed
+      ? minimum
+      : exact(account.currentBalance) + income - reservations - proposed;
+  }
+  return resultFor(minimum);
 }
 
 function accountLiquidity(snapshot: PlanningSnapshot, proposal: Proposal): bigint | null {

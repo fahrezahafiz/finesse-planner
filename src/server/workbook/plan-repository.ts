@@ -33,6 +33,16 @@ export class PlanRepository {
     this.write(entry.row, plan);
   }
 
+  /** Recovery-only transition when durable expense metadata proves an interrupted completion. */
+  reconcileCompleted(plan: Plan): void {
+    const entry = this.entries().find(entry => entry.plan.actionId === plan.actionId);
+    if (!entry || plan.status !== "COMPLETED" || plan.actualTransactionKey !== plan.actionId || !plan.completedAt) invalid();
+    if (!isRecoverableCompletionStatus(entry.plan.status)) invalid();
+    const immutable = (value: Plan) => encodePlan(value).slice(0, 19).filter((_, index) => index !== 9);
+    if (JSON.stringify(immutable(entry.plan)) !== JSON.stringify(immutable(plan))) invalid();
+    this.write(entry.row, plan);
+  }
+
   private sheet() {
     assertPlanningHeaders(this.auth.workbook);
     const sheet = this.auth.workbook.getSheetByName("Rencana Pengeluaran");
@@ -111,3 +121,6 @@ function decodePlan(row: unknown[]): Plan {
 function sheetClock(value: unknown) { if (!(value instanceof Date)) invalid(); return jakartaClock(value); }
 function integer(value: unknown): number { if (typeof value !== "number" || !Number.isSafeInteger(value)) invalid(); return value; }
 function invalid(): never { throw new DomainError("WORKBOOK_SCHEMA_INVALID"); }
+function isRecoverableCompletionStatus(status: PlanStatus): boolean {
+  return status === "RESERVED" || status === "OVERRIDDEN" || status === "EXPIRED";
+}

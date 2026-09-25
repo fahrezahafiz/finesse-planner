@@ -97,6 +97,7 @@ const PUBLIC_ERROR_CODES: ReadonlySet<string> = new Set([
   "ACCESS_DENIED",
   "AUTHORIZATION_REQUIRED",
   "BASELINE_CELL_STALE",
+  "ACCOUNT_LIQUIDITY_EXCEEDED",
   "CATEGORY_BUDGET_EXCEEDED",
   "DONOR_BUDGET_EXCEEDED",
   "FORMULA_ERROR",
@@ -107,6 +108,7 @@ const PUBLIC_ERROR_CODES: ReadonlySet<string> = new Set([
   "INVALID_MONTH",
   "LOCK_TIMEOUT",
   "OVERRIDE_REASON_REQUIRED",
+  "PROTECTED_SAVINGS_EXCEEDED",
   "RECIPIENT_BUDGET_EXCEEDED",
   "WORKBOOK_SCHEMA_INVALID",
 ]);
@@ -119,6 +121,31 @@ function publicMessage(code: DomainError["code"]): string {
       return "Your signed-in identity is unavailable.";
     case "AUTHORIZATION_REQUIRED":
       return "Authorization is required to continue.";
+    case "INVALID_AMOUNT":
+      return "Enter a whole rupiah amount greater than zero.";
+    case "INVALID_DATE":
+      return "Enter a valid date in the open planning month.";
+    case "CATEGORY_BUDGET_EXCEEDED":
+      return "This purchase exceeds the category budget.";
+    case "ACCOUNT_LIQUIDITY_EXCEEDED":
+      return "This payment account cannot cover all scheduled purchases.";
+    case "PROTECTED_SAVINGS_EXCEEDED":
+      return "This purchase would reduce protected savings below its target.";
+    case "DONOR_BUDGET_EXCEEDED":
+      return "The donor category does not have enough available budget.";
+    case "RECIPIENT_BUDGET_EXCEEDED":
+      return "The recipient category no longer has enough budget to reverse this transfer.";
+    case "BASELINE_CELL_STALE":
+      return "The baseline budget changed. Review the latest values and try again.";
+    case "LOCK_TIMEOUT":
+      return "Another update is in progress. Please try again.";
+    case "WORKBOOK_SCHEMA_INVALID":
+    case "FORMULA_ERROR":
+      return "The workbook needs attention before this request can continue.";
+    case "OVERRIDE_REASON_REQUIRED":
+      return "Enter a reason before saving an override.";
+    case "INVALID_INPUT":
+      return "Check the entered details and try again.";
     default:
       return "The request could not be completed.";
   }

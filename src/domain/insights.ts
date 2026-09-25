@@ -149,8 +149,11 @@ export function parseApprovedBaselineChange(value: unknown): ApprovedBaselineCha
   });
 
   if (changes.every(change => change.newAmount === change.expectedAmount)) throw new DomainError("INVALID_INPUT");
-  const net = changes.reduce((sum, change) => sum + (change.newAmount - change.expectedAmount), 0);
-  if (net !== 0) throw new DomainError("INVALID_INPUT");
+  const net = changes.reduce(
+    (sum, change) => sum + BigInt(change.newAmount) - BigInt(change.expectedAmount),
+    0n,
+  );
+  if (net !== 0n) throw new DomainError("INVALID_INPUT");
 
   return { actionId, reason, changes };
 }

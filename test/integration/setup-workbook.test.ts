@@ -63,7 +63,7 @@ describe("snapshot reader", () => {
     const result = readPlanningSnapshot(f.auth, clock, f.map);
     expect(result.health).toBe("FORMULA_ERROR"); expect(Number.isNaN(result.actualIncome)).toBe(true);
   });
-  it.each([["K10", 1, "TRANSFER_RECONCILIATION_ERROR"], ["K11", "2026-08", "STALE_PLANNING_MONTH"], ["K12", "2026-09-22", "STALE_PLANNING_MONTH"], ["K7", -1, "UNDERFUNDED"]])("rejects invalid summary %s", (cell, value, health) => {
+  it.each([["K10", 1, "TRANSFER_RECONCILIATION_ERROR"], ["K11", "2026-08", "STALE_PLANNING_MONTH"], ["K12", "2026-09-22", "STALE_PLANNING_MONTH"], ["K7", -1, "FORMULA_ERROR"]])("rejects invalid summary %s", (cell, value, health) => {
     const f = ready(); f.summary.getRange(String(cell)).setValue(value);
     expect(readPlanningSnapshot(f.auth, clock, f.map).health).toBe(health);
   });
@@ -124,8 +124,8 @@ describe("snapshot reader", () => {
     const result = readPlanningSnapshot(f.auth, clock, f.map);
     expect(result.health).toBe("HEALTHY"); expect(result.categories.Dining.activeReservations).toBe(100000); expect(result.categories.Dining.availableBudget).toBe(350000);
     expect(result.activeReservations).toEqual([
-      { actionId: "p1", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
-      { actionId: "p2", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { actionId: "p1", item: "Dinner", category: "Dining", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
+      { actionId: "p2", item: "Dinner", category: "Dining", amount: 50000, paymentAccount: "Main Account", plannedDate: "2026-09-24" },
     ]);
   });
   it("rejects a stale same-day numeric result and missing category output", () => {

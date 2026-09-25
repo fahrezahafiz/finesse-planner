@@ -4,8 +4,9 @@ import { parseTransferProposal } from "../domain/transfers";
 import { parseExpectedIncomeProposal } from "../domain/expected-income";
 import { parseApprovedBaselineChange } from "../domain/insights";
 import { suggestCorrections } from "../domain/corrections";
+import { evaluatePurchase } from "../domain/recommendation";
 import type { RequestClock } from "../domain/time";
-import type { Proposal } from "../domain/types";
+import type { PlanningSnapshot, Proposal } from "../domain/types";
 import type { AuthContext } from "./auth";
 import type { ServerDeps } from "./deps";
 import type { DocumentLock } from "./lock";
@@ -15,7 +16,10 @@ import { readPlanningSnapshot } from "./workbook/snapshot-reader";
 import { PlanRepository } from "./workbook/plan-repository";
 import { TransferRepository } from "./workbook/transfer-repository";
 import { IncomeRepository } from "./workbook/income-repository";
-import { checkPurchase, reservePurchase, overridePurchase, cancelPlan, expirePastPlans } from "./services/plan-service";
+import { setupPlanningSheets } from "./workbook/setup";
+import { auditWorkbookStructure, type HeaderSearchRegion } from "./workbook/audit";
+import { withDocumentLock } from "./lock";
+import { reservePurchase, overridePurchase, cancelPlan, expirePastPlans } from "./services/plan-service";
 import { completePlan } from "./services/completion-service";
 import { createTransfer, reverseTransfer } from "./services/transfer-service";
 import { createExpectedIncome, markIncomeReceived, cancelExpectedIncome } from "./services/income-service";
@@ -72,8 +76,23 @@ function requestClock(deps: ServerDeps): RequestClock {
 }
 
 function refreshedPlanningState(auth: AuthContext, deps: ServerDeps): PlanningStateView {
-  const snapshot = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap as WorkbookSourceMap | undefined);
-  return toPlanningStateView(snapshot);
+  return planningState(auth, deps, readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap));
+}
+
+function planningState(auth: AuthContext, _deps: ServerDeps, snapshot: PlanningSnapshot): PlanningStateView {
+  const base = toPlanningStateView(snapshot);
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") return base;
+  return {
+    ...base,
+    activeTransfers: new TransferRepository(auth).list().filter(transfer => transfer.status === "ACTIVE").map(toTransferView),
+    activeIncome: new IncomeRepository(auth).list().filter(entry => entry.status === "CONFIRMED").map(toIncomeView),
+  };
+}
+
+function requireHealthy(auth: AuthContext, deps: ServerDeps): PlanningSnapshot {
+  const snapshot = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap);
+  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  return snapshot;
 }
 
 function mutationResult<T>(actionId: string, result: T, auth: AuthContext, deps: ServerDeps): MutationResultView<T> {
@@ -86,6 +105,20 @@ function parseEmptyCommand(value: unknown): Record<string, never> {
     throw new DomainError("INVALID_INPUT");
   }
   return {};
+}
+
+function parseAuditCommand(value: unknown): { headerSearchRegions: HeaderSearchRegion[] } {
+  const input = inputObject(value);
+  if (!Array.isArray(input.headerSearchRegions)) throw new DomainError("INVALID_INPUT");
+  const headerSearchRegions = input.headerSearchRegions.map(raw => {
+    const region = inputObject(raw);
+    if (typeof region.sheet !== "string" || !region.sheet.trim()
+      || typeof region.row !== "number" || !Number.isSafeInteger(region.row) || region.row < 1) {
+      throw new DomainError("INVALID_INPUT");
+    }
+    return { sheet: region.sheet, row: region.row };
+  });
+  return { headerSearchRegions };
 }
 
 function parseActionIdCommand(value: unknown): { actionId: string } {
@@ -128,43 +161,74 @@ function rolloverActionId(clock: RequestClock): string {
  */
 export function createEndpoints(runtime?: RpcRuntime) {
   const getBootstrap = secureRpc(parseEmptyCommand, (_input, auth, deps): PlanningStateView => {
+    SpreadsheetApp.flush();
+    const beforeRollover = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap);
+    if (beforeRollover.health !== "HEALTHY") return planningState(auth, deps, beforeRollover);
     expirePastPlans({ actionId: rolloverActionId(requestClock(deps)) }, writableDeps(auth, deps));
     return refreshedPlanningState(auth, deps);
   }, runtime);
 
   const checkPurchaseRpc = secureRpc(parseProposal, (proposal, auth, deps): PurchaseCheckView => {
-    const decision = checkPurchase(proposal, writableDeps(auth, deps));
-    const snapshot = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap as WorkbookSourceMap | undefined);
+    parseProposal(proposal, requestClock(deps));
+    const snapshot = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap);
+    const decision = evaluatePurchase(snapshot, proposal);
     const corrections = suggestCorrections(snapshot, proposal, decision);
-    return { decision: toDecisionView(decision), corrections: corrections.map(toCorrectionView) };
+    const categoryWithout = snapshot.categories[proposal.category]?.availableBudget ?? 0;
+    const existingOverages = Object.values(snapshot.categories).reduce((sum, category) => sum + Math.max(0, -category.availableBudget), 0);
+    const categoryWith = categoryWithout - proposal.amount;
+    const withOverages = Object.entries(snapshot.categories).reduce((sum, [name, category]) =>
+      sum + Math.max(0, -(category.availableBudget - (name === proposal.category ? proposal.amount : 0))), 0);
+    const savingsWithout = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - existingOverages;
+    const savingsWith = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - withOverages;
+    const account = snapshot.accounts[proposal.paymentAccount]?.currentBalance ?? 0;
+    const allIncome = snapshot.confirmedIncome.filter(entry => entry.destinationAccount === proposal.paymentAccount).reduce((sum, entry) => sum + entry.amount, 0);
+    const allReservations = snapshot.activeReservations.filter(entry => entry.paymentAccount === proposal.paymentAccount).reduce((sum, entry) => sum + entry.amount, 0);
+    return {
+      decision: toDecisionView(decision),
+      corrections: corrections.map(toCorrectionView),
+      comparison: {
+        categoryWithout, categoryWith,
+        savingsWithout, savingsWith,
+        householdWithout: snapshot.unallocatedHeadroom - existingOverages,
+        householdWith: snapshot.unallocatedHeadroom - withOverages,
+        accountWithout: account + allIncome - allReservations,
+        accountWith: account + allIncome - allReservations - proposal.amount,
+      },
+    };
   }, runtime);
 
   const reservePurchaseRpc = secureRpc(parseProposal, (proposal, auth, deps) => {
+    requireHealthy(auth, deps);
     const plan = reservePurchase(proposal, writableDeps(auth, deps));
     return mutationResult(plan.actionId, toPlanView(plan), auth, deps);
   }, runtime);
 
   const overridePurchaseRpc = secureRpc(parseOverrideCommand, (command, auth, deps) => {
+    requireHealthy(auth, deps);
     const plan = overridePurchase(command, writableDeps(auth, deps));
     return mutationResult(plan.actionId, toPlanView(plan), auth, deps);
   }, runtime);
 
   const cancelPlanRpc = secureRpc(parseActionIdCommand, (command, auth, deps) => {
+    requireHealthy(auth, deps);
     const plan = cancelPlan(command, writableDeps(auth, deps));
     return mutationResult(plan.actionId, toPlanView(plan), auth, deps);
   }, runtime);
 
   const completePlanRpc = secureRpc(parseActionIdCommand, (command, auth, deps) => {
+    requireHealthy(auth, deps);
     const plan = completePlan(command, writableDeps(auth, deps));
     return mutationResult(plan.actionId, toPlanView(plan), auth, deps);
   }, runtime);
 
   const createTransferRpc = secureRpc(parseTransferProposal, (proposal, auth, deps) => {
+    requireHealthy(auth, deps);
     const transfer = createTransfer(proposal, writableDeps(auth, deps));
     return mutationResult(transfer.actionId, toTransferView(transfer), auth, deps);
   }, runtime);
 
   const reverseTransferRpc = secureRpc(parseReverseTransferCommand, (command, auth, deps) => {
+    requireHealthy(auth, deps);
     const transfer = reverseTransfer(command, writableDeps(auth, deps));
     return mutationResult(transfer.actionId, toTransferView(transfer), auth, deps);
   }, runtime);
@@ -186,9 +250,10 @@ export function createEndpoints(runtime?: RpcRuntime) {
     return mutationResult(income.actionId, toIncomeView(income), auth, deps);
   }, runtime);
 
-  const getHistoryRpc = secureRpc(parseEmptyCommand, (_input, auth): HistoryView => {
+  const getHistoryRpc = secureRpc(parseEmptyCommand, (_input, auth, deps): HistoryView => {
+    requireHealthy(auth, deps);
     const plans = new PlanRepository(auth).list().filter(plan => TERMINAL_PLAN_STATUSES.has(plan.status));
-    const transfers = new TransferRepository(auth).list().filter(transfer => transfer.status === "REVERSED");
+    const transfers = new TransferRepository(auth).list();
     const income = new IncomeRepository(auth).list().filter(entry => TERMINAL_INCOME_STATUSES.has(entry.status));
     return { plans: plans.map(toPlanView), transfers: transfers.map(toTransferView), income: income.map(toIncomeView) };
   }, runtime);
@@ -198,6 +263,7 @@ export function createEndpoints(runtime?: RpcRuntime) {
   // transfer-ledger window, and the client's insights screen wants both at once rather than
   // issuing two round-trips for one conceptual view.
   const getInsightsRpc = secureRpc(parseEmptyCommand, (_input, auth, deps): InsightsView => {
+    requireHealthy(auth, deps);
     const insightDeps = { auth, clock: requestClock(deps) };
     const patterns = getTransferPatternInsights({}, insightDeps);
     const baselineReview = reviewBaselineChangeSuggestions({}, insightDeps);
@@ -207,6 +273,20 @@ export function createEndpoints(runtime?: RpcRuntime) {
   const applyBaselineReviewRpc = secureRpc(parseApprovedBaselineChange, (command, auth, deps) => {
     const result = applyApprovedBaselineChange(command, writableDeps(auth, deps));
     return mutationResult(result.actionId, toBaselineReviewResultView(result), auth, deps);
+  }, runtime);
+
+  const setupPlannerRpc = secureRpc(parseEmptyCommand, (_input, auth, deps) => {
+    withDocumentLock(deps.lock ?? null, () => setupPlanningSheets(auth, deps.sourceMap));
+    return { configured: true };
+  }, runtime);
+
+  const auditPlannerWorkbookRpc = secureRpc(parseAuditCommand, (command, auth) => {
+    const enabled = PropertiesService.getScriptProperties().getProperty("SETUP_AUDIT_ENABLED") === "true";
+    if (!enabled) throw new DomainError("ACCESS_DENIED");
+    // Intentionally write the redacted structure only to the editor-visible execution log. The
+    // browser receives no sheet names, ranges, formulas, or rows.
+    console.log(JSON.stringify(auditWorkbookStructure(auth.workbook, command)));
+    return { logged: true };
   }, runtime);
 
   return {
@@ -223,5 +303,7 @@ export function createEndpoints(runtime?: RpcRuntime) {
     getHistoryRpc,
     getInsightsRpc,
     applyBaselineReviewRpc,
+    setupPlannerRpc,
+    auditPlannerWorkbookRpc,
   };
 }

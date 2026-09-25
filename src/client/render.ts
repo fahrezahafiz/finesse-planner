@@ -83,6 +83,7 @@ function defaultViewBody(container: HTMLElement, state: ClientState): void {
     for (const reservation of bootstrap.activeReservations) {
       const item = document.createElement("li");
       item.textContent =
+        `${reservation.item ? `${reservation.item}${reservation.category ? ` (${reservation.category})` : ""}: ` : ""}` +
         `${formatIDR(reservation.amount)} from ${reservation.paymentAccount} on ${formatLocalDate(reservation.plannedDate)}`;
       list.appendChild(item);
     }
@@ -184,6 +185,11 @@ export function mountShell(root: HTMLElement, store: Store): ShellHandle {
       error.className = "error-text";
       error.textContent = state.error?.message ?? "Something went wrong. Please try again.";
       body.appendChild(error);
+    } else if (state.bootstrap && !["HEALTHY", "UNDERFUNDED"].includes(state.bootstrap.health)) {
+      const unavailable = document.createElement("p");
+      unavailable.className = "error-text";
+      unavailable.textContent = "The workbook needs attention before financial planning is available.";
+      body.appendChild(unavailable);
     } else {
       const renderer = viewRenderers.get(state.view) ?? defaultViewBody;
       renderer(body, state);

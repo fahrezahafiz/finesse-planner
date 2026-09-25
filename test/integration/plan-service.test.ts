@@ -4,6 +4,7 @@ import { PlanRepository } from "../../src/server/workbook/plan-repository";
 import { setupPlanningSheets } from "../../src/server/workbook/setup";
 import { jakartaClock } from "../../src/domain/time";
 import { planningWorkbook } from "../helpers/planning-workbook";
+import { installFakeSheetsApi } from "../helpers/fake-apps-script";
 
 function fixture() {
   const f = planningWorkbook(); setupPlanningSheets(f.auth, f.map);
@@ -24,6 +25,7 @@ function fixture() {
   };
   const deps = { auth: f.auth, clock: jakartaClock(new Date("2026-09-23T00:00:00Z")), sourceMap: f.map, lock, flush };
   flush();
+  installFakeSheetsApi(f.workbook.getId(), () => new Map([...f.sheets.values()].map(sheet => [sheet.getSheetId(), sheet])), flush);
   return { ...f, ledger, summary, deps, flush, repository: new PlanRepository(f.auth), held: () => held, onAcquire: (fn: () => void) => { onAcquire = fn; } };
 }
 function command(overrides: Record<string, unknown> = {}) {
@@ -51,7 +53,9 @@ describe("plan service using the authorized workbook", () => {
   it("replays an existing ID across month rollover without treating its old proposal date as a new purchase", () => {
     const f = fixture(); const first = reservePurchase(command(), f.deps);
     f.deps.clock = jakartaClock(new Date("2026-09-30T17:00:00Z"));
-    expect(reservePurchase(command(), f.deps)).toEqual(first);
+    f.sheets.get("backend")!.getRange("G2").setValue("2026-10-01");
+    f.sheets.get("Catat - Pendapatan")!.getRange("B2").setValue(new Date("2026-10-01T00:00:00+07:00"));
+    expect(reservePurchase(command(), f.deps)).toEqual({ ...first, status: "EXPIRED" });
     expect(f.repository.list()).toHaveLength(1);
   });
   it("does not duplicate a row after persistence succeeded but the response was interrupted", () => {
@@ -94,6 +98,7 @@ describe("plan service using the authorized workbook", () => {
     const f = fixture(); reservePurchase(command(), f.deps);
     f.ledger.getRange("J2").setValue(status);
     if (status === "COMPLETED") f.ledger.getRange("T2:U2").setValues([[new Date("2026-09-24T00:00:00+07:00"), "transaction-1"]]);
+    f.flush();
     expect(() => cancelPlan({ actionId: "action-1" }, f.deps)).toThrow("INVALID_INPUT");
     expect(f.ledger.getRange("J2").getValue()).toBe(status);
   });
@@ -101,6 +106,8 @@ describe("plan service using the authorized workbook", () => {
     const f = fixture(); reservePurchase(command({ amount: 100000 }), f.deps);
     overridePurchase(command({ actionId: "action-2", amount: 1100000, reason: "Replacement" }), f.deps);
     f.deps.clock = jakartaClock(new Date("2026-09-30T17:00:00Z"));
+    f.sheets.get("backend")!.getRange("G2").setValue("2026-10-01");
+    f.sheets.get("Catat - Pendapatan")!.getRange("B2").setValue(new Date("2026-10-01T00:00:00+07:00"));
     const expired = expirePastPlans({ actionId: "rollover-1" }, f.deps);
     expect(expired.map(plan => plan.status)).toEqual(["EXPIRED", "EXPIRED"]);
     expect(f.repository.list()).toHaveLength(2);

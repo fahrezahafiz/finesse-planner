@@ -9,6 +9,7 @@
  * e.g. formatIDR(50001) === "Rp50.001".
  */
 export function formatIDR(amount: number): string {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "Unavailable";
   return `Rp${Math.round(amount).toLocaleString("id-ID")}`;
 }
 

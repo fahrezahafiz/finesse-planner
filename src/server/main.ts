@@ -26,6 +26,8 @@ export const {
   getHistoryRpc,
   getInsightsRpc,
   applyBaselineReviewRpc,
+  setupPlannerRpc,
+  auditPlannerWorkbookRpc,
 } = createEndpoints();
 
 Object.assign(globalThis, {
@@ -44,4 +46,6 @@ Object.assign(globalThis, {
   getHistoryRpc,
   getInsightsRpc,
   applyBaselineReviewRpc,
+  setupPlannerRpc,
+  auditPlannerWorkbookRpc,
 });

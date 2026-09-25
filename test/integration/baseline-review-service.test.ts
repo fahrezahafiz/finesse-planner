@@ -10,15 +10,37 @@ function fixture() {
   const budgeting = f.sheets.get("Atur Budgeting")!;
   // Unambiguous 1:1 category-to-row baseline, overriding the default fixture's duplicate "Dining" rows.
   budgeting.getRange("D2:E3").setValues([["Dining", 600000], ["Shopping", 400000]]);
+  f.sheets.get("Catat - Pendapatan")!.getRange("F2").setValue(3000000);
+  f.sheets.get("backend")!.getRange("C2").setValue(3000000);
+  f.sheets.get("Ringkasan Perencanaan")!.getRange("A2:H3").setValues([
+    ["Dining", 600000, 0, 0, 600000, 0, 0, 600000],
+    ["Shopping", 400000, 0, 0, 400000, 0, 0, 400000],
+  ]);
+  f.sheets.get("Ringkasan Perencanaan")!.getRange("K1:K12").setValues([
+    [3000000], [0], [3000000], [200000], [1000000], [1000000], [1800000], [1800000], ["HEALTHY"], [0], ["2026-09"], ["2026-09-23"],
+  ]);
   let held = false;
   let onAcquire = () => {};
   const lock = { tryLock: (_ms: number) => { if (held) return false; held = true; onAcquire(); return true; }, releaseLock: () => { held = false; } };
+  const flush = () => {
+    const sourceRows = budgeting.getRange("D2:E50").getValues().filter(row => row[0] !== "");
+    const dining = sourceRows.filter(row => row[0] === "Dining").reduce((sum, row) => sum + Number(row[1]), 0);
+    const shopping = sourceRows.filter(row => row[0] === "Shopping").reduce((sum, row) => sum + Number(row[1]), 0);
+    const total = dining + shopping;
+    f.sheets.get("Ringkasan Perencanaan")!.getRange("B2:E3").setValues([
+      [dining, 0, 0, dining],
+      [shopping, 0, 0, shopping],
+    ]);
+    f.sheets.get("Ringkasan Perencanaan")!.getRange("H2:H3").setValues([[dining], [shopping]]);
+    const headroom = 3000000 - 200000 - total;
+    f.sheets.get("Ringkasan Perencanaan")!.getRange("K5:K9").setValues([[total], [total], [headroom], [headroom], [headroom >= 0 ? "HEALTHY" : "INVALID"]]);
+  };
   const deps = {
     auth: f.auth,
     clock: jakartaClock(new Date("2026-09-23T00:00:00Z")),
     sourceMap: f.map,
     lock,
-    flush: () => {},
+    flush,
   };
   return { ...f, budgeting, deps, held: () => held, onAcquire: (fn: () => void) => { onAcquire = fn; } };
 }

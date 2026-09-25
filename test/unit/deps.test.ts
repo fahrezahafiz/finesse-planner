@@ -9,7 +9,10 @@ function stubBaseGlobals(properties: Record<string, string | undefined>, lock: u
   vi.stubGlobal("ScriptApp", { AuthMode: { FULL: "FULL" } });
   vi.stubGlobal("Session", {});
   vi.stubGlobal("SpreadsheetApp", { openById: vi.fn() });
-  vi.stubGlobal("LockService", { getDocumentLock: () => lock });
+  vi.stubGlobal("LockService", {
+    getDocumentLock: vi.fn(() => null),
+    getScriptLock: vi.fn(() => lock),
+  });
   return { getProperty };
 }
 
@@ -62,12 +65,14 @@ describe("appsScriptDeps", () => {
     expect(deps.sourceMap).toBeUndefined();
   });
 
-  it("passes through LockService.getDocumentLock() as the lock", () => {
+  it("uses the script-wide lock because document locks are unavailable in web apps", () => {
     const lock = { tryLock: () => true, releaseLock: () => {} };
     stubBaseGlobals({ [WORKBOOK_ID_PROPERTY]: "book-id" }, lock);
 
     const deps = appsScriptDeps();
 
     expect(deps.lock).toBe(lock);
+    expect(LockService.getScriptLock).toHaveBeenCalledOnce();
+    expect(LockService.getDocumentLock).not.toHaveBeenCalled();
   });
 });

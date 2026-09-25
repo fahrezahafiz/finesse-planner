@@ -8,6 +8,7 @@ import { findAppliedAction } from "../idempotency";
 import { withDocumentLock, type DocumentLock } from "../lock";
 import { PlanRepository } from "../workbook/plan-repository";
 import { readPlanningSnapshot } from "../workbook/snapshot-reader";
+import { expenseTransactionExists } from "../workbook/sheets-api";
 import type { WorkbookSourceMap } from "../workbook/source-map";
 
 /** The secure RPC boundary supplies the authorized workbook and one captured request clock. */
@@ -37,10 +38,12 @@ function createPurchase(command: unknown, deps: PlanServiceDeps, reason?: string
   const proposal = parseProposal(command);
   return withDocumentLock(deps.lock, () => {
     const repository = new PlanRepository(deps.auth);
+    flush(deps);
+    currentSnapshot(deps);
+    expire(repository, deps);
     const previous = findAppliedAction(repository.list(), proposal.actionId);
     if (previous) return previous;
     parseProposal(proposal, deps.clock);
-    expire(repository, deps);
     const snapshot = currentSnapshot(deps);
     assertKnownIdentities(snapshot, proposal);
     const decision = evaluatePurchase(snapshot, proposal);
@@ -65,6 +68,7 @@ export function cancelPlan(command: unknown, deps: PlanServiceDeps): Plan {
   const actionId = parseActionId(inputObject(command).actionId);
   return withDocumentLock(deps.lock, () => {
     const repository = new PlanRepository(deps.auth);
+    currentSnapshot(deps);
     const previous = findAppliedAction(repository.list(), actionId);
     if (!previous) throw new DomainError("INVALID_INPUT");
     if (previous.status === "CANCELLED") return previous;
@@ -86,6 +90,8 @@ export function expirePastPlans(command: unknown, deps: PlanServiceDeps): Plan[]
   parseActionId(inputObject(command).actionId);
   return withDocumentLock(deps.lock, () => {
     const repository = new PlanRepository(deps.auth);
+    flush(deps);
+    currentSnapshot(deps);
     expire(repository, deps);
     // Return durable history so repeated rollover requests have the same result.
     return repository.list().filter(plan => plan.status === "EXPIRED" && plan.month < deps.clock.month);
@@ -94,7 +100,12 @@ export function expirePastPlans(command: unknown, deps: PlanServiceDeps): Plan[]
 
 function expire(repository: PlanRepository, deps: PlanServiceDeps): void {
   for (const plan of repository.list()) {
-    if (isActivePlan(plan) && plan.month < deps.clock.month) repository.update({ ...plan, status: transitionPlan(plan.status, "EXPIRED") });
+    if (!isActivePlan(plan) || plan.month >= deps.clock.month) continue;
+    if (expenseTransactionExists(deps.auth, plan.actionId)) {
+      repository.update({ ...plan, status: transitionPlan(plan.status, "COMPLETED"), completedAt: deps.clock.nowIso, actualTransactionKey: plan.actionId });
+    } else {
+      repository.update({ ...plan, status: transitionPlan(plan.status, "EXPIRED") });
+    }
   }
   flush(deps);
 }

@@ -31,8 +31,8 @@ export function readPlanningSnapshot(auth: AuthContext, clock: RequestClock, sou
     for (const value of [actualIncome, futureIncome, recognized, savings, baselineTotal, adjustedTotal]) parseMoney(value);
     if (parseYearMonth(household[10]) !== clock.month || parseLocalDate(household[11]) !== clock.today) return invalidSnapshot(clock, "STALE_PLANNING_MONTH");
     if (reconciliation !== 0) return invalidSnapshot(clock, "TRANSFER_RECONCILIATION_ERROR");
-    if (headroom < 0) return invalidSnapshot(clock, "UNDERFUNDED");
-    if (household[8] !== "HEALTHY") throw new Error();
+    const health: PlanningHealth = headroom < 0 ? "UNDERFUNDED" : "HEALTHY";
+    if (health === "HEALTHY" ? household[8] !== "HEALTHY" : !["HEALTHY", "INVALID"].includes(household[8] as string)) throw new Error();
 
     const source = readSources(auth.workbook, map, clock);
     if (source.freshness !== clock.today) return invalidSnapshot(clock, "STALE_PLANNING_MONTH");
@@ -59,7 +59,7 @@ export function readPlanningSnapshot(auth: AuthContext, clock: RequestClock, sou
       || headroom !== planningMath.headroom(planningMath.spendablePool(actualIncome, futureIncome, savings), adjustedTotal)
       || funding !== headroom) throw new Error();
     return {
-      month: clock.month, health: "HEALTHY", actualIncome: parseMoney(actualIncome), confirmedFutureIncome: parseMoney(futureIncome),
+      month: clock.month, health, actualIncome: parseMoney(actualIncome), confirmedFutureIncome: parseMoney(futureIncome),
       protectedSavingsTarget: parseMoney(savings), totalAdjustedBudgets: parseMoney(adjustedTotal), unallocatedHeadroom: headroom,
       categories, accounts: source.accounts, planningDate: clock.today, daysRemainingInclusive: clock.daysRemainingInclusive,
       confirmedIncome: source.confirmedIncome, activeReservations: source.activeReservations,
@@ -117,7 +117,7 @@ function readSources(workbook: GoogleAppsScript.Spreadsheet.Spreadsheet, map: Wo
     if (month !== clock.month || !["RESERVED", "OVERRIDDEN"].includes(row[9])) continue;
     if (!Object.hasOwnProperty.call(accounts, row[7])) throw new Error();
     const category = categoryFor(categories, row[6]); category.activeReservations = parseMoney(category.activeReservations + amount);
-    activeReservations.push({ actionId: row[0] as string, amount, paymentAccount: row[7] as string, plannedDate });
+    activeReservations.push({ actionId: row[0] as string, item: row[5] as string, category: row[6] as string, amount, paymentAccount: row[7] as string, plannedDate });
   }
   let futureIncome = 0;
   for (const row of workbook.getSheetByName("Pendapatan Diharapkan")!.getRange("A2:I1001").getValues()) {

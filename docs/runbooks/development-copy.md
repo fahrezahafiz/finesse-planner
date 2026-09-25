@@ -12,7 +12,9 @@ application, and always before running `docs/runbooks/deploy.md`.
 
 1. Open the real household workbook in Google Sheets (view-only is enough for this step).
 2. File > Make a copy. Name it clearly, e.g. `Household Budget (dev copy, 2026-09-23)`.
-3. Save the copy in a location only you can see — not the shared household Drive folder.
+3. Save the copy outside the shared household Drive folder, then share this copy directly with the
+   same two intended household accounts as editors. Setup intentionally refuses any other editor
+   count, matching the production authorization model.
 4. Do not inspect, audit, or write to the production workbook itself at any point in this runbook.
    Every remaining step in this runbook operates on the copy only.
 
@@ -46,11 +48,20 @@ Follow `docs/runbooks/workbook-contract.md`'s "Development-copy procedure" secti
    Do not invent fallback labels, inferred ranges, or reuse a source map calibrated against a
    different workbook layout.
 
+To run the audit, temporarily set the development project Script Property
+`SETUP_AUDIT_ENABLED=true`, then invoke `auditPlannerWorkbookRpc` with
+`{headerSearchRegions: [{sheet: "...", row: 1}, ...]}` using only the approved header rows. The RPC
+returns only `{logged: true}`; the redacted structural JSON is written to the Apps Script execution
+log so it never becomes a browser view model. Download that log for offline review, then immediately
+delete `SETUP_AUDIT_ENABLED`. Never set this property in production.
+
 ## 4. Run setupPlanningSheets
 
-1. With the audited source map installed, call `setupPlanningSheets(auth, sourceMap)` against the
-   development copy (via a bound script function, or by exercising it through the app's own
-   bootstrap the first time it runs).
+1. With the audited source map installed, run the exported `setupPlannerRpc` function directly
+   from the Apps Script editor as
+   either intended editor. This exported, caller-authorized function acquires the script lock and
+   calls `setupPlanningSheets` against the configured development copy. Bootstrap never performs
+   setup implicitly.
 2. Confirm the four planning sheets (`Rencana Pengeluaran`, `Transfer Budget`,
    `Pendapatan Diharapkan`, `Ringkasan Perencanaan`) now exist with the expected headers, protected
    ranges, and named ranges, and that `Ringkasan Perencanaan` carries the calibrated formulas.
@@ -85,5 +96,5 @@ Follow `docs/runbooks/workbook-contract.md`'s "Development-copy procedure" secti
    archiving, or leaving alone) the development copy itself. The next development cycle starts over
    at step 1 with a fresh copy.
 4. Only once every acceptance scenario above passes against the development copy, and the automated
-   suite (`npm run verify-release`) also passes against this repository, proceed to
+   predeployment suite (`npm run check`) also passes against this repository, proceed to
    `docs/runbooks/deploy.md`.

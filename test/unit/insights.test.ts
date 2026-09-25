@@ -276,6 +276,17 @@ describe("parseApprovedBaselineChange", () => {
     }))).toThrow("INVALID_INPUT");
   });
 
+  it("uses exact arithmetic for a one-rupiah non-zero aggregate near the safe-integer limit", () => {
+    expect(() => parseApprovedBaselineChange(command({
+      changes: [
+        { category: "A", expectedAmount: 0, newAmount: Number.MAX_SAFE_INTEGER },
+        { category: "B", expectedAmount: 0, newAmount: 2 },
+        { category: "C", expectedAmount: Number.MAX_SAFE_INTEGER, newAmount: 0 },
+        { category: "D", expectedAmount: 1, newAmount: 0 },
+      ],
+    }))).toThrow("INVALID_INPUT");
+  });
+
   it("rejects a no-op change set", () => {
     expect(() => parseApprovedBaselineChange(command({
       changes: [

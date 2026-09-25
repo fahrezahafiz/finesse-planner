@@ -141,7 +141,7 @@ describe("secureRpc", () => {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: "The request could not be completed.",
+        message: "Check the entered details and try again.",
       },
     });
     expect(deps.audit.calls).toEqual([

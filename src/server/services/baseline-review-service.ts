@@ -4,6 +4,7 @@ import type { RequestClock } from "../../domain/time";
 import type { AuthContext } from "../auth";
 import { withDocumentLock, type DocumentLock } from "../lock";
 import { validateWorkbookSchema } from "../workbook/schema";
+import { readPlanningSnapshot } from "../workbook/snapshot-reader";
 import type { WorkbookSourceMap } from "../workbook/source-map";
 
 /** The secure RPC boundary supplies the authorized workbook and one captured request clock. */
@@ -52,6 +53,10 @@ export function applyApprovedBaselineChange(command: unknown, deps: BaselineRevi
   const approved = parseApprovedBaselineChange(command);
   return withDocumentLock(deps.lock, () => {
     validateWorkbookSchema(deps.auth.workbook, deps.sourceMap);
+    flush(deps);
+    if (readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap).health !== "HEALTHY") {
+      throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+    }
     const categories = approved.changes.map(change => change.category);
     const cells = locateBaselineCells(deps.auth, deps.sourceMap, categories);
 
@@ -62,11 +67,17 @@ export function applyApprovedBaselineChange(command: unknown, deps: BaselineRevi
       throw new DomainError("BASELINE_CELL_STALE");
     }
 
-    const sheet = deps.auth.workbook.getSheetByName(deps.sourceMap.baseline.plannedAmount.sheet)!;
+    const amountRange = deps.sourceMap.baseline.plannedAmount;
+    const sheet = deps.auth.workbook.getSheetByName(amountRange.sheet)!;
+    const range = sheet.getRange(amountRange.a1);
+    const values = range.getValues();
+    const startRow = parseStartRow(amountRange.a1);
     for (const change of approved.changes) {
       const cell = cells.get(change.category)!;
-      sheet.getRange(cell.row, cell.column).setValue(change.newAmount);
+      values[cell.row - startRow]![0] = change.newAmount;
     }
+    // One range write is all-or-nothing; a lock alone cannot make several setValue calls atomic.
+    range.setValues(values);
     flush(deps);
     return buildResult(approved, deps);
   });

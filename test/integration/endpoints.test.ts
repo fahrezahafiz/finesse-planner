@@ -78,7 +78,7 @@ function fixture(now = new Date("2026-09-23T00:00:00Z")) {
     const reconciliation = rows.reduce((sum, row) => sum + (row[2] as number), 0) - rows.reduce((sum, row) => sum + (row[3] as number), 0);
     summary.getRange("K1:K12").setValues([
       [actualIncome], [futureIncome], [recognized], [savings], [totalBaseline], [totalAdjusted],
-      [headroom], [headroom], ["HEALTHY"], [reconciliation], [month], [today],
+      [headroom], [headroom], [headroom >= 0 ? "HEALTHY" : "INVALID"], [reconciliation], [month], [today],
     ]);
   }
   flush();
@@ -208,7 +208,7 @@ describe("getBootstrap", () => {
       daysRemaining: 8,
     });
     expect(state.safeToPlanAmount).toBeTypeOf("number");
-    expect(state.activeReservations).toEqual([{ actionId: "plan-1", amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" }]);
+    expect(state.activeReservations).toEqual([{ actionId: "plan-1", item: "Headphones", category: "Dining", amount: 300000, paymentAccount: "Main Account", plannedDate: "2026-09-24" }]);
     expect(state.categories).toEqual(expect.arrayContaining([{ category: "Dining", adjustedBudget: 600000, availableBudget: 300000 }]));
   });
 

@@ -2,6 +2,7 @@ import { DomainError } from "../../domain/errors";
 import { inputObject, isActivePlan, parseActionId, transitionPlan, type Plan } from "../../domain/plans";
 import type { RequestClock } from "../../domain/time";
 import type { PlanningSnapshot } from "../../domain/types";
+import { evaluatePurchase } from "../../domain/recommendation";
 import type { AuthContext } from "../auth";
 import { findAppliedAction } from "../idempotency";
 import { withDocumentLock, type DocumentLock } from "../lock";
@@ -31,14 +32,31 @@ export function completePlan(command: unknown, deps: CompletionServiceDeps): Pla
     const repository = new PlanRepository(deps.auth);
     const current = findAppliedAction(repository.list(), actionId);
     if (!current) throw new DomainError("INVALID_INPUT");
-    if (current.status === "COMPLETED") return current;
-    if (!isActivePlan(current)) throw new DomainError("INVALID_INPUT");
-
     const snapshot = currentSnapshot(deps);
-    assertKnownIdentities(snapshot, current);
-
     const transactionKey = current.actionId;
-    if (!expenseTransactionExists(deps.auth, transactionKey)) {
+    const expenseExists = expenseTransactionExists(deps.auth, transactionKey);
+    if (current.status === "COMPLETED") return current;
+    if (expenseExists && (isActivePlan(current) || current.status === "EXPIRED")) {
+      const completed: Plan = { ...current, status: "COMPLETED", completedAt: deps.clock.nowIso, actualTransactionKey: transactionKey };
+      repository.reconcileCompleted(completed);
+      flush(deps);
+      return completed;
+    }
+    if (!isActivePlan(current)) throw new DomainError("INVALID_INPUT");
+    if (current.month < deps.clock.month) {
+      repository.update({ ...current, status: transitionPlan(current.status, "EXPIRED") });
+      flush(deps);
+      throw new DomainError("INVALID_INPUT");
+    }
+    assertKnownIdentities(snapshot, current);
+    if (current.status === "RESERVED") {
+      const withoutOwnReservation = removeReservation(snapshot, current);
+      const decision = evaluatePurchase(withoutOwnReservation, current);
+      if (decision.verdict !== "RECOMMENDED") {
+        throw new DomainError(!decision.category.passed ? "CATEGORY_BUDGET_EXCEEDED" : !decision.account.passed ? "ACCOUNT_LIQUIDITY_EXCEEDED" : "PROTECTED_SAVINGS_EXCEEDED");
+      }
+    }
+    if (!expenseExists) {
       appendExpenseWithKey(deps.auth, deps.sourceMap, {
         date: deps.clock.today, category: current.category, detail: current.item,
         account: current.paymentAccount, amount: current.amount,
@@ -50,6 +68,22 @@ export function completePlan(command: unknown, deps: CompletionServiceDeps): Pla
     flush(deps);
     return completed;
   });
+}
+
+function removeReservation(snapshot: PlanningSnapshot, plan: Plan): PlanningSnapshot {
+  const category = snapshot.categories[plan.category];
+  return {
+    ...snapshot,
+    categories: {
+      ...snapshot.categories,
+      [plan.category]: {
+        ...category,
+        activeReservations: (category.activeReservations - plan.amount) as never,
+        availableBudget: category.availableBudget + plan.amount,
+      },
+    },
+    activeReservations: snapshot.activeReservations.filter(reservation => reservation.actionId !== plan.actionId),
+  };
 }
 
 function currentSnapshot(deps: CompletionServiceDeps): PlanningSnapshot {
