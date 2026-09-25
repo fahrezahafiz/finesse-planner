@@ -187,6 +187,20 @@ describe("transfer service using the authorized workbook", () => {
       expect(f.transferRepository.list()).toHaveLength(2);
     });
 
+    it("rechecks recipient capacity before resuming an interrupted reversal", () => {
+      const f = fixture(); const original = createTransfer(transferCommand(), f.deps);
+      f.transferRepository.append({
+        ...original, actionId: "reversal-1", fromCategory: original.toCategory, toCategory: original.fromCategory,
+        reason: `Reversal of ${original.actionId}`, status: "REVERSED", reversalReference: original.actionId,
+      });
+      f.expenses.getRange("B2:F2").setValues([[new Date("2026-09-23T00:00:00+07:00"), "Shopping", "Shoes", "Main Account", 599999]]);
+      f.flush();
+
+      expect(() => reverseTransfer({ actionId: "reversal-1", transferId: original.actionId }, f.deps))
+        .toThrow("RECIPIENT_BUDGET_EXCEEDED");
+      expect(f.transferRepository.list().find(t => t.actionId === original.actionId)!.status).toBe("ACTIVE");
+    });
+
     it("rejects a reversal that would make the recipient negative", () => {
       const f = fixture(); const original = createTransfer(transferCommand(), f.deps);
       f.expenses.getRange("B2:F2").setValues([[new Date("2026-09-23T00:00:00+07:00"), "Shopping", "Shoes", "Main Account", 599999]]);

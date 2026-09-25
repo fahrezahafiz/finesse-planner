@@ -71,6 +71,21 @@ describe("applyApprovedBaselineChange", () => {
     expect(f.held()).toBe(false);
   });
 
+  it("writes no baseline cell when the single atomic range update is rejected", () => {
+    const f = fixture();
+    const realGetRange = f.budgeting.getRange.bind(f.budgeting);
+    f.budgeting.getRange = ((...args: unknown[]) => {
+      const range = (realGetRange as (...rangeArgs: unknown[]) => GoogleAppsScript.Spreadsheet.Range)(...args);
+      if (args[0] === "E2:E50") {
+        range.setValues = () => { throw new Error("atomic write rejected"); };
+      }
+      return range;
+    }) as typeof f.budgeting.getRange;
+
+    expect(() => applyApprovedBaselineChange(reviewCommand(), f.deps)).toThrow("atomic write rejected");
+    expect(realGetRange("E2:E3").getValues()).toEqual([[600000], [400000]]);
+  });
+
   it("rejects a baseline cell that changed since it was reviewed", () => {
     const f = fixture();
     // The reviewer captured Dining at 600000, but the sheet now holds a different value.
