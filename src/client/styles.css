@@ -1,0 +1,324 @@
+:root {
+  --green-950: #0b2f26;
+  --green-800: #155b46;
+  --gold-500: #c99a2e;
+  --paper: #f7f7f2;
+  --surface: #ffffff;
+  --ink: #17211d;
+  --muted: #65716b;
+  --danger: #b42318;
+  --focus: #0b6bcb;
+  --content-width: 40rem;
+  --nav-height: 4.25rem;
+
+  color-scheme: light;
+  font-size: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Hidden off-screen until focused, per the standard skip-link pattern. */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(-150%);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 1rem;
+  background: var(--green-950);
+  color: var(--surface);
+  text-decoration: none;
+  border-radius: 0 0 0.5rem 0;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.status-region {
+  min-height: 1.5rem;
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0.5rem 1rem calc(var(--nav-height) + 1rem);
+}
+
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  margin: 0.5rem 0 1rem;
+  color: var(--green-950);
+}
+
+h2 {
+  font-size: 1.0625rem;
+  margin: 1.5rem 0 0.5rem;
+  color: var(--green-800);
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* Red is reserved for concrete failures - never used for general emphasis elsewhere. */
+.error-text {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.summary dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.summary dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  min-height: var(--nav-height);
+  background: var(--surface);
+  border-top: 1px solid rgba(11, 47, 38, 0.12);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  z-index: 10;
+}
+
+.bottom-nav button {
+  flex: 1 1 0;
+  min-height: 44px;
+  min-width: 44px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.875rem;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+.bottom-nav button[aria-current="page"] {
+  color: var(--green-800);
+  font-weight: 700;
+  box-shadow: inset 0 3px 0 0 var(--gold-500);
+}
+
+a,
+button {
+  font: inherit;
+}
+
+/* Visible focus outline everywhere, distinct from any hover/active styling. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* main and .bottom-nav already cap at --content-width and center themselves (margin: 0 auto) on
+   any viewport, phone or desktop - so once the viewport exceeds --content-width the same
+   phone-first column simply centers instead of stretching edge to edge. No separate desktop
+   layout or breakpoint is needed. */
+
+/* Task 13: shared form field styling used by every view's forms. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem;
+}
+
+.field label {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(11, 47, 38, 0.2);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+button.button-primary,
+button.button-secondary,
+button.button-caution {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  margin: 0 0.5rem 0.5rem 0;
+}
+
+button.button-primary {
+  background: var(--green-800);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+button.button-secondary {
+  background: var(--surface);
+  color: var(--green-800);
+  border-color: var(--green-800);
+}
+
+/* The restrained gold planning action (spec section 11 "Visual direction"): the override action is
+   available but visually secondary, never styled as the primary/expected path. */
+button.button-caution {
+  background: var(--surface);
+  color: var(--gold-500);
+  border-color: var(--gold-500);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.confirm-panel {
+  background: var(--surface);
+  border: 1px solid rgba(11, 47, 38, 0.15);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.confirm-title {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 0.75rem;
+  list-style: none;
+}
+
+.category-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.category-name {
+  font-weight: 700;
+  color: var(--green-950);
+  margin: 0 0 0.25rem;
+}
+
+.bar {
+  width: 100%;
+  height: 0.75rem;
+  background: rgba(11, 47, 38, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--green-800);
+}
+
+.bar-fill-danger {
+  background: var(--danger);
+}
+
+.verdict-ok {
+  font-weight: 700;
+  color: var(--green-800);
+}
+
+.verdict-bad {
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.review-row {
+  border-top: 1px solid rgba(11, 47, 38, 0.1);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}

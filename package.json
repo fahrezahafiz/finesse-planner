@@ -1,0 +1,24 @@
+{
+  "name": "finesse-planner-mindful-expense",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "verify-release": "node scripts/verify-release.mjs"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@google/clasp": "^3.4.1",
+    "@testing-library/dom": "^10.4.2",
+    "@types/google-apps-script": "^2.0.13",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}
