@@ -14,6 +14,7 @@ function bootstrapFixture(overrides: Partial<PlanningStateView> = {}): PlanningS
     protectedSavings: 500000,
     fundedAmount: 3000000,
     safeToPlanAmount: 750000,
+    unallocatedHeadroom: 250000,
     categories: [
       { category: "Shopping", adjustedBudget: 300000, availableBudget: 250000 },
       { category: "Dining", adjustedBudget: 200000, availableBudget: 150000 },
@@ -283,6 +284,12 @@ describe("transfers-view: insights", () => {
         },
       }),
     );
+    const refreshedPlanningState = bootstrapFixture({
+      categories: [
+        { category: "Dining", adjustedBudget: 300000, availableBudget: 250000 },
+        { category: "Shopping", adjustedBudget: 200000, availableBudget: 150000 },
+      ],
+    });
     const applyBaselineReviewRpc = vi.fn().mockResolvedValue(
       ok({
         actionId: "review-1",
@@ -295,10 +302,10 @@ describe("transfers-view: insights", () => {
             { category: "Shopping", previousAmount: 300000, newAmount: 200000 },
           ],
         },
-        planningState: bootstrapFixture(),
+        planningState: refreshedPlanningState,
       }),
     );
-    mount(fakeRunner({ getHistoryRpc, getInsightsRpc, applyBaselineReviewRpc }));
+    const { store } = mount(fakeRunner({ getHistoryRpc, getInsightsRpc, applyBaselineReviewRpc }));
 
     await waitFor(() => expect(screen.getByText(/Dining: suggest increase of Rp100\.000/)).toBeTruthy());
     expect(screen.getByText(/Shopping: suggest decrease of Rp100\.000/)).toBeTruthy();
@@ -329,6 +336,7 @@ describe("transfers-view: insights", () => {
         ],
       }),
     ));
+    await waitFor(() => expect(store.getState().bootstrap).toBe(refreshedPlanningState));
   });
 
   it("does not resubmit while a baseline review is pending, and reuses the same actionId on a failed-then-retried apply", async () => {

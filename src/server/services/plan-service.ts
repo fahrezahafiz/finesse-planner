@@ -71,6 +71,19 @@ export function cancelPlan(command: unknown, deps: PlanServiceDeps): Plan {
     currentSnapshot(deps);
     const previous = findAppliedAction(repository.list(), actionId);
     if (!previous) throw new DomainError("INVALID_INPUT");
+    if (expenseTransactionExists(deps.auth, previous.actionId)) {
+      if (previous.status === "COMPLETED") return previous;
+      if (!isActivePlan(previous) && previous.status !== "EXPIRED") throw new DomainError("INVALID_INPUT");
+      const completed: Plan = {
+        ...previous,
+        status: "COMPLETED",
+        completedAt: deps.clock.nowIso,
+        actualTransactionKey: previous.actionId,
+      };
+      repository.reconcileCompleted(completed);
+      flush(deps);
+      return completed;
+    }
     if (previous.status === "CANCELLED") return previous;
     expire(repository, deps);
     const current = findAppliedAction(repository.list(), actionId)!;

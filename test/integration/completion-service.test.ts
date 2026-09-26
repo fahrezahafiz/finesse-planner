@@ -100,7 +100,7 @@ describe("completion service using the authorized workbook", () => {
     reservePurchase(reserveCommand({ actionId: "action-4", item: "Dinner out", amount: 250000, plannedDate: "2026-09-25" }), f.deps);
     completePlan(completeCommand("action-4"), f.deps);
     const row = f.expenses.getRange("B2:F2").getValues()[0];
-    expect(row[0]).toEqual(new Date(`${f.deps.clock.today}T00:00:00+07:00`));
+    expect(row[0]).toEqual(new Date("2026-09-25T00:00:00+07:00"));
     expect(row[0]).not.toEqual("2026-09-23"); // a real Sheets date, not text that looks like one
     expect(row[1]).toBe("Dining");
     expect(row[2]).toBe("Dinner out");

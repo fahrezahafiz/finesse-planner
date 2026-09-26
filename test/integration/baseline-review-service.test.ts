@@ -3,6 +3,7 @@ import { applyApprovedBaselineChange } from "../../src/server/services/baseline-
 import { setupPlanningSheets } from "../../src/server/workbook/setup";
 import { jakartaClock } from "../../src/domain/time";
 import { planningWorkbook } from "../helpers/planning-workbook";
+import { installFakeSheetsApi } from "../helpers/fake-apps-script";
 
 function fixture() {
   const f = planningWorkbook();
@@ -42,7 +43,9 @@ function fixture() {
     lock,
     flush,
   };
-  return { ...f, budgeting, deps, held: () => held, onAcquire: (fn: () => void) => { onAcquire = fn; } };
+  const sheetsById = () => new Map([...f.sheets.values()].map(sheet => [sheet.getSheetId(), sheet]));
+  const sheetsController = installFakeSheetsApi(f.workbook.getId(), sheetsById, flush);
+  return { ...f, budgeting, deps, sheetsController, held: () => held, onAcquire: (fn: () => void) => { onAcquire = fn; } };
 }
 
 function reviewCommand(overrides: Record<string, unknown> = {}) {
@@ -71,19 +74,34 @@ describe("applyApprovedBaselineChange", () => {
     expect(f.held()).toBe(false);
   });
 
-  it("writes no baseline cell when the single atomic range update is rejected", () => {
+  it("preserves a formula in an unapproved baseline cell", () => {
     const f = fixture();
+    f.budgeting.getRange("E50").setFormula("=123456");
     const realGetRange = f.budgeting.getRange.bind(f.budgeting);
     f.budgeting.getRange = ((...args: unknown[]) => {
       const range = (realGetRange as (...rangeArgs: unknown[]) => GoogleAppsScript.Spreadsheet.Range)(...args);
       if (args[0] === "E2:E50") {
-        range.setValues = () => { throw new Error("atomic write rejected"); };
+        const realSetValues = range.setValues.bind(range);
+        range.setValues = values => {
+          const result = realSetValues(values);
+          realGetRange("E50").setFormula("");
+          return result;
+        };
       }
       return range;
     }) as typeof f.budgeting.getRange;
 
-    expect(() => applyApprovedBaselineChange(reviewCommand(), f.deps)).toThrow("atomic write rejected");
-    expect(realGetRange("E2:E3").getValues()).toEqual([[600000], [400000]]);
+    applyApprovedBaselineChange(reviewCommand(), f.deps);
+
+    expect(realGetRange("E50").getFormula()).toBe("=123456");
+  });
+
+  it("writes no baseline cell when the single atomic range update is rejected", () => {
+    const f = fixture();
+    f.sheetsController.rejectNextBatchUpdate();
+
+    expect(() => applyApprovedBaselineChange(reviewCommand(), f.deps)).toThrow("batchUpdate rejected");
+    expect(f.budgeting.getRange("E2:E3").getValues()).toEqual([[600000], [400000]]);
   });
 
   it("rejects a baseline cell that changed since it was reviewed", () => {
@@ -126,6 +144,21 @@ describe("applyApprovedBaselineChange", () => {
     const second = applyApprovedBaselineChange(reviewCommand(), f.deps);
     expect(second).toEqual(first);
     expect(f.budgeting.getRange("E2:E3").getValues()).toEqual([[500000], [500000]]);
+  });
+
+  it("does not reapply an old action after a newer approval restores its expected values", () => {
+    const f = fixture();
+    const first = applyApprovedBaselineChange(reviewCommand(), f.deps);
+    applyApprovedBaselineChange(reviewCommand({
+      actionId: "review-2",
+      changes: [
+        { category: "Dining", expectedAmount: 500000, newAmount: 600000 },
+        { category: "Shopping", expectedAmount: 500000, newAmount: 400000 },
+      ],
+    }), f.deps);
+
+    expect(applyApprovedBaselineChange(reviewCommand(), f.deps)).toEqual(first);
+    expect(f.budgeting.getRange("E2:E3").getValues()).toEqual([[600000], [400000]]);
   });
 
   it("rejects a change set that does not sum to zero before touching the sheet", () => {

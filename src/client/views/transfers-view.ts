@@ -352,12 +352,13 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
 
     api
       .applyBaselineReview({ actionId: reviewActionId, reason, changes })
-      .then(({ result }) => {
+      .then(({ result, planningState }) => {
         reviewPending = false;
         reviewResultNote = `Applied ${result.changes.length} baseline change(s) at ${formatLocalDate(result.appliedAt.slice(0, 10))}.`;
         reviewActionId = crypto.randomUUID();
         insights = null;
         loadStarted = false;
+        store.setState({ bootstrap: planningState });
         rerender();
         ensureLoaded();
       })

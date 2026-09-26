@@ -50,8 +50,10 @@ export interface PlanningStateView {
   readonly protectedSavings: number;
   /** Total recognized monthly income (actual + confirmed future income) funding this month's plan. */
   readonly fundedAmount: number;
-  /** The unallocated headroom: how much more can safely be planned this month. */
+  /** Remaining positive capacity across purchase categories after spending and reservations. */
   readonly safeToPlanAmount: number;
+  /** Funding not assigned to any category; unavailable for purchases until a baseline review. */
+  readonly unallocatedHeadroom: number;
   readonly categories: readonly CategoryBudgetView[];
   readonly accounts: readonly AccountBalanceView[];
   readonly activeReservations: readonly ActiveReservationView[];
@@ -60,6 +62,9 @@ export interface PlanningStateView {
 }
 
 export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateView {
+  const safeToPlanAmount = Object.values(snapshot.categories)
+    .reduce((sum, category) => sum + Math.max(0, category.availableBudget), 0);
+  if (!Number.isSafeInteger(safeToPlanAmount)) throw new Error("UNSAFE_MONEY_RESULT");
   return {
     month: snapshot.month,
     health: snapshot.health,
@@ -67,7 +72,8 @@ export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateVi
     daysRemaining: snapshot.daysRemainingInclusive,
     protectedSavings: snapshot.protectedSavingsTarget,
     fundedAmount: snapshot.actualIncome + snapshot.confirmedFutureIncome,
-    safeToPlanAmount: snapshot.unallocatedHeadroom,
+    safeToPlanAmount,
+    unallocatedHeadroom: snapshot.unallocatedHeadroom,
     categories: Object.entries(snapshot.categories).map(([category, value]) => ({
       category,
       adjustedBudget: value.adjustedBudget,

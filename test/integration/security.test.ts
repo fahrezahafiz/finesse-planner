@@ -167,6 +167,19 @@ describe("completion retry after an interrupted finalization (public RPC surface
     expect(f.sheetsController.metadataCount()).toBe(1);
   });
 
+  it("reconciles an interrupted completion instead of cancelling its purchased plan", () => {
+    const f = endpointFixture();
+    unwrap(f.endpoints.reservePurchaseRpc(planCommand({ actionId: "plan-1", amount: 300000 })));
+
+    f.sheetsController.commitThenThrowNextBatchUpdate();
+    expect(f.endpoints.completePlanRpc({ actionId: "plan-1" })).toMatchObject({ ok: false });
+
+    const cancelled = unwrap(f.endpoints.cancelPlanRpc({ actionId: "plan-1" }));
+    expect(cancelled.result.status).toBe("COMPLETED");
+    expect(f.planRepository.list()[0]?.status).toBe("COMPLETED");
+    expect(f.expenses.getRange("B2:F50").getValues().filter((row: unknown[]) => row[1] !== "")).toHaveLength(1);
+  });
+
   it("reconciles an interrupted completion before expiring it after month rollover", () => {
     const f = endpointFixture();
     unwrap(f.endpoints.reservePurchaseRpc(planCommand()));

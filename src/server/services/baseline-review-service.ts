@@ -5,6 +5,7 @@ import type { AuthContext } from "../auth";
 import { withDocumentLock, type DocumentLock } from "../lock";
 import { validateWorkbookSchema } from "../workbook/schema";
 import { readPlanningSnapshot } from "../workbook/snapshot-reader";
+import { applyBaselineCellsWithKey, baselineReviewExists } from "../workbook/sheets-api";
 import type { WorkbookSourceMap } from "../workbook/source-map";
 
 /** The secure RPC boundary supplies the authorized workbook and one captured request clock. */
@@ -57,27 +58,21 @@ export function applyApprovedBaselineChange(command: unknown, deps: BaselineRevi
     if (readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap).health !== "HEALTHY") {
       throw new DomainError("WORKBOOK_SCHEMA_INVALID");
     }
+    if (baselineReviewExists(deps.auth, approved.actionId)) return buildResult(approved, deps);
     const categories = approved.changes.map(change => change.category);
     const cells = locateBaselineCells(deps.auth, deps.sourceMap, categories);
 
-    if (approved.changes.every(change => cells.get(change.category)!.value === change.newAmount)) {
-      return buildResult(approved, deps);
-    }
     if (approved.changes.some(change => cells.get(change.category)!.value !== change.expectedAmount)) {
       throw new DomainError("BASELINE_CELL_STALE");
     }
 
     const amountRange = deps.sourceMap.baseline.plannedAmount;
-    const sheet = deps.auth.workbook.getSheetByName(amountRange.sheet)!;
-    const range = sheet.getRange(amountRange.a1);
-    const values = range.getValues();
-    const startRow = parseStartRow(amountRange.a1);
-    for (const change of approved.changes) {
-      const cell = cells.get(change.category)!;
-      values[cell.row - startRow]![0] = change.newAmount;
-    }
-    // One range write is all-or-nothing; a lock alone cannot make several setValue calls atomic.
-    range.setValues(values);
+    applyBaselineCellsWithKey(
+      deps.auth,
+      amountRange.sheet,
+      approved.changes.map(change => ({ ...cells.get(change.category)!, amount: change.newAmount })),
+      approved.actionId,
+    );
     flush(deps);
     return buildResult(approved, deps);
   });

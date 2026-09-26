@@ -64,6 +64,7 @@ function defaultViewBody(container: HTMLElement, state: ClientState): void {
   const summary = document.createElement("dl");
   summary.className = "summary";
   appendSummaryRow(summary, "Safe to plan", formatIDR(bootstrap.safeToPlanAmount));
+  appendSummaryRow(summary, "Unallocated headroom", formatIDR(bootstrap.unallocatedHeadroom));
   appendSummaryRow(summary, "Protected savings", formatIDR(bootstrap.protectedSavings));
   appendSummaryRow(summary, "Days remaining", String(bootstrap.daysRemaining));
   appendSummaryRow(summary, "Planning date", formatLocalDate(bootstrap.planningDate));

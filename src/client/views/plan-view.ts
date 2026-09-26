@@ -284,6 +284,7 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
     appendSummaryRow(summary, "Protected savings", formatIDR(bootstrap.protectedSavings));
     appendSummaryRow(summary, "Funded amount", formatIDR(bootstrap.fundedAmount));
     appendSummaryRow(summary, "Safe to plan", formatIDR(bootstrap.safeToPlanAmount));
+    appendSummaryRow(summary, "Unallocated headroom", formatIDR(bootstrap.unallocatedHeadroom));
     appendSummaryRow(summary, "Days remaining", String(bootstrap.daysRemaining));
     container.appendChild(summary);
 

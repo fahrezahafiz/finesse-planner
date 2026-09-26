@@ -22,6 +22,7 @@ function bootstrapFixture(overrides: Partial<PlanningStateView> = {}): PlanningS
     protectedSavings: 500000,
     fundedAmount: 3000000,
     safeToPlanAmount: 750000,
+    unallocatedHeadroom: 250000,
     categories: [],
     accounts: [],
     activeReservations: [],

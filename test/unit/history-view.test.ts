@@ -14,6 +14,7 @@ function bootstrapFixture(): PlanningStateView {
     protectedSavings: 500000,
     fundedAmount: 3000000,
     safeToPlanAmount: 750000,
+    unallocatedHeadroom: 250000,
     categories: [],
     accounts: [],
     activeReservations: [],
@@ -114,5 +115,24 @@ describe("history-view", () => {
     expect(await screen.findByText("No completed, cancelled, or expired plans yet.")).toBeTruthy();
     expect(screen.getByText("No transfers yet.")).toBeTruthy();
     expect(screen.getByText("No received or cancelled income yet.")).toBeTruthy();
+  });
+
+  it("reloads history after another view publishes refreshed planning state", async () => {
+    const completed = {
+      actionId: "plan-1", item: "Groceries", category: "Dining", paymentAccount: "Cash", amount: 100000,
+      plannedDate: "2026-09-10", status: "COMPLETED", verdict: "RECOMMENDED", failedGuardrails: [],
+      overrideReason: "", createdAt: "2026-09-09T00:00:00+07:00", completedAt: "2026-09-10T00:00:00+07:00",
+    };
+    const getHistoryRpc = vi.fn()
+      .mockResolvedValueOnce(ok({ plans: [], transfers: [], income: [] }))
+      .mockResolvedValueOnce(ok({ plans: [completed], transfers: [], income: [] }));
+    const { store } = mount(fakeRunner({ getHistoryRpc }));
+
+    expect(await screen.findByText("No completed, cancelled, or expired plans yet.")).toBeTruthy();
+    store.setState({ view: "plan", bootstrap: { ...bootstrapFixture(), safeToPlanAmount: 650000 } });
+    store.setState({ view: "history" });
+
+    await waitFor(() => expect(getHistoryRpc).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/Groceries: Rp100\.000/)).toBeTruthy();
   });
 });

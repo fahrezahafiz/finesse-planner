@@ -1,11 +1,12 @@
 import { DomainError } from "../../domain/errors";
-import { parseText } from "../../domain/plans";
+import { parseActionId, parseText } from "../../domain/plans";
 import { parseLocalDate, parseMoney } from "../../domain/validation";
 import type { AuthContext } from "../auth";
 import type { SourceRange, WorkbookSourceMap } from "./source-map";
 
 /** Row-scoped developer metadata that marks a Catat - Pengeluaran row as one plan's actual transaction. */
 export const EXPENSE_TRANSACTION_METADATA_KEY = "mindfulExpenseTransaction";
+export const BASELINE_REVIEW_METADATA_KEY = "mindfulBaselineReview";
 
 /** Catat - Pengeluaran columns B:F, in the calibrated order documented in workbook-contract.md. */
 const EXPENSE_COLUMNS = ["B", "C", "D", "E", "F"] as const;
@@ -21,12 +22,72 @@ export interface ExpenseAppendValues {
   readonly amount: number;
 }
 
+export interface BaselineCellUpdate {
+  readonly row: number;
+  readonly column: number;
+  readonly amount: number;
+}
+
 /** True when a Catat - Pengeluaran row already carries this transaction key. */
 export function expenseTransactionExists(auth: AuthContext, transactionKey: string): boolean {
   const response = sheetsApi().Spreadsheets.DeveloperMetadata.search({
     dataFilters: [{ developerMetadataLookup: { metadataKey: EXPENSE_TRANSACTION_METADATA_KEY, metadataValue: transactionKey } }],
   }, spreadsheetId(auth));
   return (response.matchedDeveloperMetadata ?? []).length > 0;
+}
+
+/** True when a baseline-review action has already committed its atomic cell updates. */
+export function baselineReviewExists(auth: AuthContext, actionId: string): boolean {
+  const response = sheetsApi().Spreadsheets.DeveloperMetadata.search({
+    dataFilters: [{ developerMetadataLookup: { metadataKey: BASELINE_REVIEW_METADATA_KEY, metadataValue: actionId } }],
+  }, spreadsheetId(auth));
+  return (response.matchedDeveloperMetadata ?? []).length > 0;
+}
+
+/** Atomically updates only approved baseline cells and records a durable idempotency key. */
+export function applyBaselineCellsWithKey(
+  auth: AuthContext,
+  sheetName: string,
+  updates: readonly BaselineCellUpdate[],
+  actionId: string,
+): void {
+  if (!updates.length || new Set(updates.map(update => `${update.row}:${update.column}`)).size !== updates.length) invalid();
+  const sheet = auth.workbook.getSheetByName(parseText(sheetName));
+  if (!sheet) invalid();
+  const sheetId = sheet.getSheetId();
+  const values = updates.map(update => {
+    if (!Number.isSafeInteger(update.row) || update.row < 1 || !Number.isSafeInteger(update.column) || update.column < 1) invalid();
+    return { ...update, amount: parseMoney(update.amount) };
+  });
+  const metadataValue = parseActionId(actionId);
+  const first = values[0]!;
+  sheetsApi().Spreadsheets.batchUpdate({
+    requests: [
+      ...values.map(update => ({
+        updateCells: {
+          range: {
+            sheetId,
+            startRowIndex: update.row - 1,
+            endRowIndex: update.row,
+            startColumnIndex: update.column - 1,
+            endColumnIndex: update.column,
+          },
+          rows: [{ values: [{ userEnteredValue: { numberValue: update.amount } }] }],
+          fields: "userEnteredValue",
+        },
+      })),
+      {
+        createDeveloperMetadata: {
+          developerMetadata: {
+            location: { dimensionRange: { sheetId, dimension: "ROWS", startIndex: first.row - 1, endIndex: first.row } },
+            metadataKey: BASELINE_REVIEW_METADATA_KEY,
+            metadataValue,
+            visibility: "DOCUMENT",
+          },
+        },
+      },
+    ],
+  }, spreadsheetId(auth));
 }
 
 /**

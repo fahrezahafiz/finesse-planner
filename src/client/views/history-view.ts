@@ -2,7 +2,7 @@ import { formatIDR, formatLocalDate } from "../format";
 import type { Store } from "../state";
 import type { ApiClient, ApiError } from "../api";
 import type { ViewRenderer } from "../render";
-import type { HistoryView } from "../../server/view-models";
+import type { HistoryView, PlanningStateView } from "../../server/view-models";
 
 /**
  * The History tab: the full past-tense record via api.getHistory() alone - completed, cancelled,
@@ -15,11 +15,12 @@ function describeApiError(error: unknown): string {
   return apiError?.message ?? "Something went wrong. Please try again.";
 }
 
-export function createHistoryRenderer(_store: Store, api: ApiClient): ViewRenderer {
+export function createHistoryRenderer(store: Store, api: ApiClient): ViewRenderer {
   let history: HistoryView | null = null;
   let loadStarted = false;
   let loadError: string | null = null;
   let currentContainer: HTMLElement | null = null;
+  let loadedForBootstrap: PlanningStateView | null = null;
 
   function rerender(): void {
     if (currentContainer) render(currentContainer);
@@ -28,13 +29,16 @@ export function createHistoryRenderer(_store: Store, api: ApiClient): ViewRender
   function ensureLoaded(): void {
     if (loadStarted) return;
     loadStarted = true;
+    const requestedFor = loadedForBootstrap;
     api
       .getHistory()
       .then(result => {
+        if (loadedForBootstrap !== requestedFor) return;
         history = result;
         rerender();
       })
       .catch((error: unknown) => {
+        if (loadedForBootstrap !== requestedFor) return;
         // Deliberately do NOT reset loadStarted here. render() calls ensureLoaded() on every
         // render, and this catch runs inside a rerender() it triggers - resetting loadStarted
         // would make ensureLoaded() fire a fresh getHistory() call immediately, which (if the RPC
@@ -55,6 +59,13 @@ export function createHistoryRenderer(_store: Store, api: ApiClient): ViewRender
 
   function render(container: HTMLElement): void {
     currentContainer = container;
+    const currentBootstrap = store.getState().bootstrap;
+    if (currentBootstrap !== loadedForBootstrap) {
+      loadedForBootstrap = currentBootstrap;
+      history = null;
+      loadStarted = false;
+      loadError = null;
+    }
     ensureLoaded();
     container.replaceChildren();
 

@@ -4,7 +4,7 @@ import { parseTransferProposal } from "../domain/transfers";
 import { parseExpectedIncomeProposal } from "../domain/expected-income";
 import { parseApprovedBaselineChange } from "../domain/insights";
 import { suggestCorrections } from "../domain/corrections";
-import { evaluatePurchase } from "../domain/recommendation";
+import { evaluatePurchase, plannedAccountLiquidity } from "../domain/recommendation";
 import type { RequestClock } from "../domain/time";
 import type { PlanningSnapshot, Proposal } from "../domain/types";
 import type { AuthContext } from "./auth";
@@ -180,9 +180,7 @@ export function createEndpoints(runtime?: RpcRuntime) {
       sum + Math.max(0, -(category.availableBudget - (name === proposal.category ? proposal.amount : 0))), 0);
     const savingsWithout = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - existingOverages;
     const savingsWith = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - withOverages;
-    const account = snapshot.accounts[proposal.paymentAccount]?.currentBalance ?? 0;
-    const allIncome = snapshot.confirmedIncome.filter(entry => entry.destinationAccount === proposal.paymentAccount).reduce((sum, entry) => sum + entry.amount, 0);
-    const allReservations = snapshot.activeReservations.filter(entry => entry.paymentAccount === proposal.paymentAccount).reduce((sum, entry) => sum + entry.amount, 0);
+    const accountBefore = plannedAccountLiquidity(snapshot, proposal) ?? 0;
     return {
       decision: toDecisionView(decision),
       corrections: corrections.map(toCorrectionView),
@@ -191,8 +189,8 @@ export function createEndpoints(runtime?: RpcRuntime) {
         savingsWithout, savingsWith,
         householdWithout: snapshot.unallocatedHeadroom - existingOverages,
         householdWith: snapshot.unallocatedHeadroom - withOverages,
-        accountWithout: account + allIncome - allReservations,
-        accountWith: account + allIncome - allReservations - proposal.amount,
+        accountWithout: accountBefore,
+        accountWith: accountBefore - proposal.amount,
       },
     };
   }, runtime);

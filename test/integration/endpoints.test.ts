@@ -212,6 +212,19 @@ describe("getBootstrap", () => {
     expect(state.categories).toEqual(expect.arrayContaining([{ category: "Dining", adjustedBudget: 600000, availableBudget: 300000 }]));
   });
 
+  it("reports remaining category capacity separately from unallocated headroom", () => {
+    const f = fixture();
+    const state = unwrap(f.endpoints.getBootstrap(undefined));
+
+    expect(state.safeToPlanAmount).toBe(1000000);
+    expect(state.unallocatedHeadroom).toBe(1800000);
+
+    unwrap(f.endpoints.reservePurchaseRpc(planCommand({ amount: 300000 })));
+    const reserved = unwrap(f.endpoints.getBootstrap(undefined));
+    expect(reserved.safeToPlanAmount).toBe(700000);
+    expect(reserved.unallocatedHeadroom).toBe(1800000);
+  });
+
   it("rolls over stale reservations before showing state", () => {
     const f = fixture();
     unwrap(f.endpoints.reservePurchaseRpc(planCommand()));
@@ -240,6 +253,18 @@ describe("checkPurchaseRpc", () => {
     const response = unwrap(f.endpoints.checkPurchaseRpc(planCommand({ amount: 100000 })));
     expect(response.decision.verdict).toBe("RECOMMENDED");
     expect(response.corrections).toEqual([]);
+  });
+
+  it("excludes income arriving after the purchase date from account comparisons", () => {
+    const f = fixture();
+    f.sheets.get("backend")!.getRange("C2").setValue(0);
+    f.flush();
+    unwrap(f.endpoints.createExpectedIncomeRpc(incomeCommand({ amount: 300000, expectedDate: "2026-09-25" })));
+
+    const response = unwrap(f.endpoints.checkPurchaseRpc(planCommand({ amount: 100000, plannedDate: "2026-09-24" })));
+    expect(response.decision.account.passed).toBe(false);
+    expect(response.comparison.accountWithout).toBe(0);
+    expect(response.comparison.accountWith).toBe(-100000);
   });
 });
 
@@ -275,7 +300,7 @@ describe("completePlanRpc", () => {
     const response = unwrap(f.endpoints.completePlanRpc({ actionId: "plan-1" }));
     expect(response.result).toMatchObject({ status: "COMPLETED" });
     const row = f.expenses.getRange("B2:F2").getValues()[0];
-    expect(jakartaClock(row[0]).today).toBe("2026-09-23");
+    expect(jakartaClock(row[0]).today).toBe("2026-09-24");
     expect(row.slice(1)).toEqual(["Dining", "Headphones", "Main Account", 300000]);
   });
 });

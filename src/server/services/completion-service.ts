@@ -58,7 +58,7 @@ export function completePlan(command: unknown, deps: CompletionServiceDeps): Pla
     }
     if (!expenseExists) {
       appendExpenseWithKey(deps.auth, deps.sourceMap, {
-        date: deps.clock.today, category: current.category, detail: current.item,
+        date: current.plannedDate, category: current.category, detail: current.item,
         account: current.paymentAccount, amount: current.amount,
       }, transactionKey);
     }
