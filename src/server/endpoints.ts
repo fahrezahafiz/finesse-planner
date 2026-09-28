@@ -91,7 +91,7 @@ function planningState(auth: AuthContext, _deps: ServerDeps, snapshot: PlanningS
 
 function requireHealthy(auth: AuthContext, deps: ServerDeps): PlanningSnapshot {
   const snapshot = readPlanningSnapshot(auth, requestClock(deps), deps.sourceMap);
-  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
   return snapshot;
 }
 
@@ -176,8 +176,14 @@ export function createEndpoints(runtime?: RpcRuntime) {
     const categoryWithout = snapshot.categories[proposal.category]?.availableBudget ?? 0;
     const existingOverages = Object.values(snapshot.categories).reduce((sum, category) => sum + Math.max(0, -category.availableBudget), 0);
     const categoryWith = categoryWithout - proposal.amount;
+    // If the proposed category doesn't exist in the workbook (typo, or a genuinely new category),
+    // the reduce below never matches it, so it would otherwise contribute zero incremental overage
+    // here even though evaluatePurchase's own decision (above) already seeds overage with the full
+    // proposed amount in that case - which made this comparison self-contradictory with `decision`.
+    const proposalCategoryKnown = Object.hasOwnProperty.call(snapshot.categories, proposal.category);
     const withOverages = Object.entries(snapshot.categories).reduce((sum, [name, category]) =>
-      sum + Math.max(0, -(category.availableBudget - (name === proposal.category ? proposal.amount : 0))), 0);
+      sum + Math.max(0, -(category.availableBudget - (name === proposal.category ? proposal.amount : 0))), 0)
+      + (proposalCategoryKnown ? 0 : proposal.amount);
     const savingsWithout = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - existingOverages;
     const savingsWith = snapshot.actualIncome + snapshot.confirmedFutureIncome - snapshot.totalAdjustedBudgets - withOverages;
     const accountBefore = plannedAccountLiquidity(snapshot, proposal) ?? 0;

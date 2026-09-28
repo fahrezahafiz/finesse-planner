@@ -1,4 +1,5 @@
 import { evaluatePurchase, plannedAccountLiquidity } from "./recommendation";
+import { PROTECTED_SAVINGS_CATEGORY } from "./transfers";
 import type { Correction, Decision, Money, PlanningSnapshot, Proposal } from "./types";
 
 /** Returns only independently workable corrections, in the user-facing priority order. */
@@ -34,7 +35,7 @@ function transferCorrection(snapshot: PlanningSnapshot, proposal: Proposal): Cor
   const amount = proposal.amount - recipient.availableBudget;
   if (amount <= 0 || !Number.isSafeInteger(amount)) return null;
   for (const [name, donor] of Object.entries(snapshot.categories).sort(([left], [right]) => left.localeCompare(right))) {
-    if (name === proposal.category || name === "Savings" || donor.availableBudget < amount) continue;
+    if (name === proposal.category || name === PROTECTED_SAVINGS_CATEGORY || donor.availableBudget < amount) continue;
     const categories = { ...snapshot.categories, [name]: { ...donor, availableBudget: donor.availableBudget - amount }, [proposal.category]: { ...recipient, availableBudget: recipient.availableBudget + amount } };
     if (evaluatePurchase({ ...snapshot, categories }, proposal).verdict === "RECOMMENDED") {
       return { kind: "TRANSFER", fromCategory: name, toCategory: proposal.category, amount: amount as Money };

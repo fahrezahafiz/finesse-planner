@@ -180,6 +180,66 @@ describe("transfers-view: reversal", () => {
     ));
   });
 
+  it("refreshes cached history/insights after a reversal changes the store's bootstrap, instead of keeping the just-reversed transfer stale", async () => {
+    const getHistoryRpc = vi.fn().mockResolvedValue(ok(emptyHistory));
+    const getInsightsRpc = vi.fn().mockResolvedValue(ok({ transferPatterns: { windowMonths: [], recurringRecipients: [], recurringDonors: [] }, baselineReview: { windowMonths: [], changes: [] } }));
+    const createTransferRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "transfer-1",
+        result: {
+          actionId: "transfer-1",
+          fromCategory: "Shopping",
+          toCategory: "Dining",
+          amount: 30000,
+          reason: "Balance",
+          relatedPlanId: "",
+          status: "ACTIVE",
+          createdAt: "2026-09-24T00:00:00+07:00",
+          reversalReference: "",
+        },
+        planningState: bootstrapFixture(),
+      }),
+    );
+    const reverseTransferRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "reversal-1",
+        result: {
+          actionId: "reversal-1",
+          fromCategory: "Dining",
+          toCategory: "Shopping",
+          amount: 30000,
+          reason: "Reversal of transfer-1",
+          relatedPlanId: "",
+          status: "REVERSED",
+          createdAt: "2026-09-24T01:00:00+07:00",
+          reversalReference: "transfer-1",
+        },
+        planningState: bootstrapFixture(),
+      }),
+    );
+    mount(fakeRunner({ getHistoryRpc, getInsightsRpc, createTransferRpc, reverseTransferRpc }));
+    await waitFor(() => expect(getHistoryRpc).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Create a transfer" }));
+    fireEvent.change(screen.getByLabelText("From category"), { target: { value: "Shopping" } });
+    fireEvent.change(screen.getByLabelText("To category"), { target: { value: "Dining" } });
+    fireEvent.input(screen.getByLabelText("Amount"), { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm transfer" }));
+    await waitFor(() => expect(screen.getByText(/from Shopping to Dining/)).toBeTruthy());
+    // Creating a transfer also changes the store's bootstrap, which is itself expected to
+    // invalidate this cache - so history/insights are refetched here too, before the reversal below.
+    await waitFor(() => expect(getHistoryRpc).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getInsightsRpc).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Reverse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm reversal" }));
+    await waitFor(() => expect(reverseTransferRpc).toHaveBeenCalled());
+
+    await waitFor(() => expect(getHistoryRpc).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(getInsightsRpc).toHaveBeenCalledTimes(3));
+  });
+
   it("does not resubmit while a reversal is pending, and reuses the same actionId on a failed-then-retried reversal", async () => {
     const getHistoryRpc = vi.fn().mockResolvedValue(ok(emptyHistory));
     const getInsightsRpc = vi.fn().mockResolvedValue(ok({ transferPatterns: { windowMonths: [], recurringRecipients: [], recurringDonors: [] }, baselineReview: { windowMonths: [], changes: [] } }));

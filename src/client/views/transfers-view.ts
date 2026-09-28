@@ -8,6 +8,7 @@ import type {
   CategoryBudgetView,
   HistoryView,
   InsightsView,
+  PlanningStateView,
   RecurringCategoryPatternView,
   TransferView,
 } from "../../server/view-models";
@@ -241,6 +242,10 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
   let insights: InsightsView | null = null;
   let loadStarted = false;
   let loadError: string | null = null;
+  // See history-view.ts's matching field: without this, a mutation that changes the store's
+  // bootstrap (e.g. reversing a transfer) never invalidates this cache, so the just-reversed
+  // transfer's history/insights stay stale until a full page reload.
+  let loadedForBootstrap: PlanningStateView | null = null;
 
   // See this file's "Known limitation" note.
   let sessionTransfers: TransferView[] = [];
@@ -283,14 +288,17 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
   function ensureLoaded(): void {
     if (loadStarted) return;
     loadStarted = true;
+    const requestedFor = loadedForBootstrap;
     Promise.all([api.getHistory(), api.getInsights()])
       .then(([historyResult, insightsResult]) => {
+        if (loadedForBootstrap !== requestedFor) return;
         history = historyResult;
         insights = insightsResult;
         reviewDrafts = new Map(insightsResult.baselineReview.changes.map(change => [change.category, { expectedAmount: "", newAmount: "" }]));
         rerender();
       })
       .catch((error: unknown) => {
+        if (loadedForBootstrap !== requestedFor) return;
         // Deliberately do NOT reset loadStarted here - see history-view.ts's matching comment.
         // render() calls ensureLoaded() on every render; resetting loadStarted in this catch would
         // make it fire a fresh load immediately on the rerender() below, and if the RPC keeps
@@ -415,6 +423,14 @@ export function createTransfersRenderer(store: Store, api: ApiClient): ViewRende
 
   function render(container: HTMLElement): void {
     currentContainer = container;
+    const currentBootstrap = store.getState().bootstrap;
+    if (currentBootstrap !== loadedForBootstrap) {
+      loadedForBootstrap = currentBootstrap;
+      history = null;
+      insights = null;
+      loadStarted = false;
+      loadError = null;
+    }
     ensureLoaded();
     container.replaceChildren();
 

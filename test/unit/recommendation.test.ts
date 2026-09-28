@@ -63,7 +63,11 @@ describe("evaluatePurchase", () => {
     expect(decision.savings).toEqual({ passed: false, shortfall: 1 });
   });
 
-  it("includes overruns in every category when protecting savings", () => {
+  it("counts only the proposal's own category overage when protecting savings, per spec section 7's single-category formula", () => {
+    // Dining is already over-reserved (e.g. via an earlier override, which can leave a category
+    // over-reserved without going through this guardrail). Before this fix, evaluatePurchase summed
+    // shortfall across every category, so Dining's unrelated overrun bled into a Shopping purchase's
+    // savings check even though Shopping itself comfortably affords it.
     const base = healthySnapshot();
     const snapshot = healthySnapshot({
       actualIncome: parseMoney(1200000),
@@ -75,8 +79,23 @@ describe("evaluatePurchase", () => {
       },
     });
 
-    const decision = evaluatePurchase(snapshot, proposal({ amount: parseMoney(100000) }));
+    const decision = evaluatePurchase(snapshot, proposal({ category: "Shopping", amount: parseMoney(100000) }));
 
+    expect(decision.savings).toEqual({ passed: true, shortfall: 0 });
+    expect(decision.verdict).toBe("RECOMMENDED");
+  });
+
+  it("still reduces projected savings by this proposal's own overage when it exceeds its category budget", () => {
+    const snapshot = healthySnapshot({
+      actualIncome: parseMoney(1200000),
+      totalAdjustedBudgets: parseMoney(1000000),
+      protectedSavingsTarget: parseMoney(200000),
+      categories: { Shopping: { ...healthySnapshot().categories.Shopping, adjustedBudget: parseMoney(400000), availableBudget: 400000 } },
+    });
+
+    const decision = evaluatePurchase(snapshot, proposal({ category: "Shopping", amount: parseMoney(500000) }));
+
+    // overage = MAX(0, 500000 - 400000) = 100000; projected savings = 1200000 - 1000000 - 100000 = 100000 < 200000 target.
     expect(decision.savings).toEqual({ passed: false, shortfall: 100000 });
   });
 
