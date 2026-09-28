@@ -45,6 +45,15 @@ describe("plan service using the authorized workbook", () => {
     expect(f.repository.list()).toHaveLength(1);
     expect(f.held()).toBe(false);
   });
+  it("reports ACCOUNT_LIQUIDITY_EXCEEDED distinctly from a generic error when only the account guardrail fails", () => {
+    // Before this fix, every non-category guardrail failure (account liquidity or protected savings)
+    // collapsed into a generic INVALID_INPUT here, unlike completion-service.ts's completePlan, which
+    // already distinguishes all three for the identical guardrail combination.
+    const f = fixture();
+    f.sheets.get("backend")!.getRange("C2").setValue(100000);
+    expect(() => reservePurchase(command(), f.deps)).toThrow("ACCOUNT_LIQUIDITY_EXCEEDED");
+    expect(f.repository.list()).toEqual([]);
+  });
   it("returns the same durable row on duplicate action IDs even when requested values differ", () => {
     const f = fixture(); const first = reservePurchase(command(), f.deps);
     expect(reservePurchase(command({ amount: 200000 }), f.deps)).toEqual(first);

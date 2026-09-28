@@ -83,6 +83,12 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
   let openTransferFor: string | null = null;
   let categoryTransferForm: ((container: HTMLElement) => void) | null = null;
 
+  // Which reservation row's confirm dialog is open, if any. renderBody rebuilds every panel from
+  // scratch on every rerender (see this file's docstring on activeReservations), so without this
+  // the panel's open/closed state - previously kept only in the DOM - was silently discarded by any
+  // unrelated rerender (e.g. toggling a different category's transfer form).
+  let openConfirmFor: { actionId: string; kind: "complete" | "cancel" } | null = null;
+
   const renderExpectedIncome = createExpectedIncomeSection(store, api);
 
   let currentContainer: HTMLElement | null = null;
@@ -453,6 +459,10 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
         completeButton.disabled = pending;
         const completePanel = document.createElement("div");
         completeButton.addEventListener("click", () => {
+          openConfirmFor = { actionId: reservation.actionId, kind: "complete" };
+          rerender();
+        });
+        if (openConfirmFor?.actionId === reservation.actionId && openConfirmFor.kind === "complete") {
           renderConfirmDialog(completePanel, {
             title: "Confirm purchase completed",
             message: sessionPlan
@@ -460,12 +470,17 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
               : `Record ${formatIDR(reservation.amount)} as actual spending.`,
             confirmLabel: "Confirm complete",
             onConfirm: () => {
+              openConfirmFor = null;
               closeConfirmDialog(completePanel);
               completeReservation(reservation.actionId);
             },
-            onCancel: () => closeConfirmDialog(completePanel),
+            onCancel: () => {
+              openConfirmFor = null;
+              closeConfirmDialog(completePanel);
+              rerender();
+            },
           });
-        });
+        }
         item.append(completeButton, completePanel);
 
         const cancelButton = document.createElement("button");
@@ -475,6 +490,10 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
         cancelButton.disabled = pending;
         const cancelPanel = document.createElement("div");
         cancelButton.addEventListener("click", () => {
+          openConfirmFor = { actionId: reservation.actionId, kind: "cancel" };
+          rerender();
+        });
+        if (openConfirmFor?.actionId === reservation.actionId && openConfirmFor.kind === "cancel") {
           renderConfirmDialog(cancelPanel, {
             title: "Confirm cancel reservation",
             message: sessionPlan
@@ -482,12 +501,17 @@ export function createPlanRenderer(store: Store, api: ApiClient): ViewRenderer {
               : `Release the ${formatIDR(reservation.amount)} reserved.`,
             confirmLabel: "Confirm cancel",
             onConfirm: () => {
+              openConfirmFor = null;
               closeConfirmDialog(cancelPanel);
               cancelReservation(reservation.actionId);
             },
-            onCancel: () => closeConfirmDialog(cancelPanel),
+            onCancel: () => {
+              openConfirmFor = null;
+              closeConfirmDialog(cancelPanel);
+              rerender();
+            },
           });
-        });
+        }
         item.append(cancelButton, cancelPanel);
 
         const rowError = rowErrors.get(reservation.actionId);

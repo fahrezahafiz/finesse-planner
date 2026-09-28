@@ -125,7 +125,13 @@ export function createExpectedIncomeSection(store: Store, api: ApiClient): (cont
 
     const form = document.createElement("form");
     form.setAttribute("aria-label", "Add expected income");
-    form.addEventListener("submit", submitCreate);
+    // Route native form submission (e.g. pressing Enter in any field) through the same confirm-gated
+    // path as the visible "Add expected income" button below, instead of calling submitCreate
+    // directly - the confirmation dialog must not be skippable via Enter.
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      submitButton.click();
+    });
 
     const sourceField = document.createElement("div");
     sourceField.className = "field";

@@ -341,6 +341,26 @@ describe("plan-view: active reservation actions", () => {
 
     await waitFor(() => expect(cancelPlanRpc).toHaveBeenCalledWith(expect.objectContaining({ actionId: "plan-from-reload" })));
   });
+
+  it("keeps an open confirm dialog visible across an unrelated rerender", async () => {
+    // Before this fix, renderBody() unconditionally rebuilt every reservation row's confirm panel
+    // from scratch on every rerender, and the panel's open/closed state lived only in the DOM - so
+    // any unrelated rerender (here: toggling a different category's transfer form) silently
+    // discarded an already-open confirmation with no explanation.
+    mount(
+      fakeRunner({}),
+      bootstrapFixture({
+        activeReservations: [{ actionId: "plan-from-reload", amount: 75000, paymentAccount: "Cash", plannedDate: "2026-09-27" }],
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel reservation" }));
+    expect(screen.getByRole("button", { name: "Confirm cancel" })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Transfer budget" })[0]);
+
+    expect(screen.getByRole("button", { name: "Confirm cancel" })).toBeTruthy();
+  });
 });
 
 describe("plan-view: category health", () => {
@@ -460,5 +480,39 @@ describe("plan-view: expected income", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm received" }));
 
     await waitFor(() => expect(updateExpectedIncomeRpc).toHaveBeenCalledWith({ actionId: "income-1", status: "RECEIVED" }));
+  });
+
+  it("routes native form submission (e.g. pressing Enter) through the same confirm dialog as the Add button, never creating income unconfirmed", async () => {
+    const createExpectedIncomeRpc = vi.fn().mockResolvedValue(
+      ok({
+        actionId: "income-1",
+        result: {
+          actionId: "income-1",
+          expectedDate: "2026-09-28",
+          source: "Freelance",
+          destinationAccount: "Cash",
+          amount: 200000,
+          note: "",
+          status: "CONFIRMED",
+          createdAt: "2026-09-24T00:00:00+07:00",
+        },
+        planningState: bootstrapFixture({ fundedAmount: 3200000 }),
+      }),
+    );
+    mount(fakeRunner({ createExpectedIncomeRpc }));
+
+    fireEvent.input(screen.getByLabelText("Source"), { target: { value: "Freelance" } });
+    fireEvent.change(screen.getByLabelText("Destination account"), { target: { value: "Cash" } });
+    fireEvent.input(screen.getByLabelText("Income amount"), { target: { value: "200000" } });
+    fireEvent.input(screen.getByLabelText("Expected date"), { target: { value: "2026-09-28" } });
+
+    const form = document.querySelector('form[aria-label="Add expected income"]')!;
+    fireEvent.submit(form);
+
+    expect(createExpectedIncomeRpc).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Confirm income" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm income" }));
+    await waitFor(() => expect(createExpectedIncomeRpc).toHaveBeenCalled());
   });
 });

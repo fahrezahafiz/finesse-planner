@@ -78,7 +78,7 @@ export function reverseTransfer(command: unknown, deps: TransferServiceDeps): Tr
 
 function currentSnapshot(deps: TransferServiceDeps): PlanningSnapshot {
   const snapshot = readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap);
-  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
   return snapshot;
 }
 

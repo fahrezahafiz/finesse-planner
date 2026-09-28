@@ -65,13 +65,20 @@ export function toPlanningStateView(snapshot: PlanningSnapshot): PlanningStateVi
   const safeToPlanAmount = Object.values(snapshot.categories)
     .reduce((sum, category) => sum + Math.max(0, category.availableBudget), 0);
   if (!Number.isSafeInteger(safeToPlanAmount)) throw new Error("UNSAFE_MONEY_RESULT");
+  const fundedAmount = snapshot.actualIncome + snapshot.confirmedFutureIncome;
+  // Only guard the arithmetic for a snapshot where these fields are meant to be real numbers.
+  // An invalid-health snapshot's actualIncome/confirmedFutureIncome are NaN by design (see
+  // snapshot-reader.ts's invalidSnapshot - "unknown, never fabricated zero"), and NaN correctly
+  // fails Number.isSafeInteger too, so this check must not fire for that already-documented case.
+  const usableForArithmetic = snapshot.health === "HEALTHY" || snapshot.health === "UNDERFUNDED";
+  if (usableForArithmetic && !Number.isSafeInteger(fundedAmount)) throw new Error("UNSAFE_MONEY_RESULT");
   return {
     month: snapshot.month,
     health: snapshot.health,
     planningDate: snapshot.planningDate,
     daysRemaining: snapshot.daysRemainingInclusive,
     protectedSavings: snapshot.protectedSavingsTarget,
-    fundedAmount: snapshot.actualIncome + snapshot.confirmedFutureIncome,
+    fundedAmount,
     safeToPlanAmount,
     unallocatedHeadroom: snapshot.unallocatedHeadroom,
     categories: Object.entries(snapshot.categories).map(([category, value]) => ({

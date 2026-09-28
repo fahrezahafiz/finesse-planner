@@ -22,12 +22,11 @@ export function evaluatePurchase(snapshot: PlanningSnapshot, proposal: Proposal)
     const amount = exact(proposal.amount);
     const categoryAvailable = category ? exact(category.availableBudget) : 0n;
     const categoryResult = category ? resultFor(categoryAvailable - amount) : failed(proposal.amount);
-    const overage = Object.entries(snapshot.categories).reduce((sum, [name, value]) => {
-      const afterProposal = name === proposal.category
-        ? exact(value.availableBudget) - amount
-        : exact(value.availableBudget);
-      return sum + maximum(0n, -afterProposal);
-    }, category ? 0n : amount);
+    // Spec section 7: "Proposed category overage = MAX(0, Proposed amount - Available category
+    // budget)" - the proposal's own category only. A purchase that fits its category never reduces
+    // projected savings even if a different category is already over-reserved (e.g. via an earlier
+    // override); only this proposal's own unbudgeted overage does.
+    const overage = category ? maximum(0n, amount - categoryAvailable) : amount;
     const projectedSavings = exact(snapshot.actualIncome) + exact(snapshot.confirmedFutureIncome)
       - exact(snapshot.totalAdjustedBudgets) - overage;
     const savingsResult = resultFor(projectedSavings - exact(snapshot.protectedSavingsTarget));

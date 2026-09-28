@@ -5,6 +5,7 @@ import { setupPlanningSheets } from "../../src/server/workbook/setup";
 import { PlanRepository } from "../../src/server/workbook/plan-repository";
 import { TransferRepository } from "../../src/server/workbook/transfer-repository";
 import { IncomeRepository } from "../../src/server/workbook/income-repository";
+import { createTransfer } from "../../src/server/services/transfer-service";
 import { jakartaClock } from "../../src/domain/time";
 import { planningWorkbook } from "../helpers/planning-workbook";
 import { fakeDeps, installFakeSheetsApi } from "../helpers/fake-apps-script";
@@ -116,7 +117,93 @@ function unwrap<T>(result: { ok: boolean; data?: T; error?: unknown }): T {
   return result.data as T;
 }
 
+/**
+ * A deliberately UNDERFUNDED snapshot (Dining's adjusted budget alone exceeds recognized income
+ * minus protected savings, so unallocated headroom is negative). Unlike `fixture()`'s summary,
+ * which recomputes itself from live sheet state every flush, this one is static so a test can
+ * assert on the UNDERFUNDED health without the household ever becoming healthy again.
+ */
+function underfundedFixture(now = new Date("2026-09-23T00:00:00Z")) {
+  const f = planningWorkbook();
+  setupPlanningSheets(f.auth, f.map);
+  (f.workbook as unknown as { getName: () => string }).getName = () => "Household planner";
+  f.sheets.get("Atur Budgeting")!.getRange("D2:E3").setValues([["Dining", 2900000], ["Shopping", 0]]);
+  f.sheets.get("Catat - Pendapatan")!.getRange("F2").setValue(3000000);
+  f.sheets.get("backend")!.getRange("C2").setValue(3000000);
+  const summary = f.sheets.get("Ringkasan Perencanaan")!;
+  const clock = jakartaClock(now);
+
+  let held = false;
+  let onAcquire = () => {};
+  const lock = {
+    tryLock: (_ms: number) => { if (held) return false; held = true; onAcquire(); return true; },
+    releaseLock: () => { held = false; },
+  };
+  function flush() {
+    summary.getRange("A2:H3").setValues([
+      ["Dining", 2900000, 0, 0, 2900000, 0, 0, 2900000],
+      ["Shopping", 0, 0, 0, 0, 0, 0, 0],
+    ]);
+    summary.getRange("K1:K12").setValues([
+      [3000000], [0], [3000000], [200000], [2900000], [2900000],
+      [-100000], [-100000], ["INVALID"], [0], [clock.month], [clock.today],
+    ]);
+  }
+  flush();
+
+  const base = fakeDeps({ now });
+  const deps: ServerDeps = { ...base, spreadsheetApp: { openById: () => f.workbook }, sourceMap: f.map, lock, now: () => now };
+  vi.stubGlobal("SpreadsheetApp", { flush });
+  installFakeSheetsApi(f.workbook.getId(), () => new Map([...f.sheets.values()].map(sheet => [sheet.getSheetId(), sheet])), flush);
+
+  return { ...f, summary, deps, flush, endpoints: createEndpoints({ deps }), held: () => held, onAcquire: (fn: () => void) => { onAcquire = fn; } };
+}
+
 afterEach(() => vi.unstubAllGlobals());
+
+describe("secured planner endpoints: UNDERFUNDED health is usable, not treated as corruption", () => {
+  it("still serves the bootstrap, history, and insights reads while underfunded", () => {
+    const f = underfundedFixture();
+    const bootstrap = unwrap(f.endpoints.getBootstrap(undefined));
+    expect(bootstrap.health).toBe("UNDERFUNDED");
+
+    expect(f.endpoints.getHistoryRpc(undefined).ok).toBe(true);
+    expect(f.endpoints.getInsightsRpc(undefined).ok).toBe(true);
+  });
+
+  it("still allows the zero-sum recovery transfer the spec describes as the fix for an underfunded month", () => {
+    const f = underfundedFixture();
+    const created = unwrap(f.endpoints.createTransferRpc(
+      { actionId: "transfer-1", fromCategory: "Dining", toCategory: "Shopping", amount: 100000, reason: "Cover shopping" },
+    ));
+    expect(created.result.status).toBe("ACTIVE");
+  });
+
+  it("still allows reversing an existing transfer while underfunded", () => {
+    // Seeds the ACTIVE transfer via the real service (bypassing the RPC's own health gate, which is
+    // what this fix targets, not what's being seeded here), then makes the fixture's static summary
+    // self-consistent with the resulting ledger, since it cannot recompute itself the way the
+    // dynamic fixture() above does.
+    const f = underfundedFixture();
+    createTransfer(
+      { actionId: "transfer-1", fromCategory: "Dining", toCategory: "Shopping", amount: 50000, reason: "Cover shopping" },
+      { auth: f.auth, clock: jakartaClock(new Date("2026-09-23T00:00:00Z")), sourceMap: f.map, lock: f.deps.lock },
+    );
+    f.summary.getRange("A2:H3").setValues([
+      ["Dining", 2900000, 0, 50000, 2850000, 0, 0, 2850000],
+      ["Shopping", 0, 50000, 0, 50000, 0, 0, 50000],
+    ]);
+
+    const reversed = unwrap(f.endpoints.reverseTransferRpc({ actionId: "reversal-1", transferId: "transfer-1" }));
+    expect(reversed.result.status).toBe("REVERSED");
+  });
+
+  it("still correctly blocks a brand-new purchase recommendation while underfunded (spec: negative headroom blocks positive recommendations)", () => {
+    const f = underfundedFixture();
+    const result = f.endpoints.reservePurchaseRpc(planCommand({ category: "Dining", amount: 1000 }));
+    expect(result.ok).toBe(false);
+  });
+});
 
 describe("secured planner endpoints: data minimization", () => {
   it("does not expose sheet names, ranges, formulas, or raw rows from getBootstrap", () => {
@@ -265,6 +352,17 @@ describe("checkPurchaseRpc", () => {
     expect(response.decision.account.passed).toBe(false);
     expect(response.comparison.accountWithout).toBe(0);
     expect(response.comparison.accountWith).toBe(-100000);
+  });
+
+  it("reports the full proposed amount as incremental overage for a category the workbook doesn't have, instead of a self-contradictory zero effect", () => {
+    // Before this fix, decision.verdict correctly rejected an unknown category, but `comparison`
+    // (computed independently) claimed the proposal had zero effect on savings/headroom, because its
+    // own reduce only matched categories that already exist in the snapshot.
+    const f = fixture();
+    const response = unwrap(f.endpoints.checkPurchaseRpc(planCommand({ category: "Not A Real Category", amount: 100000 })));
+    expect(response.decision.verdict).toBe("NOT_RECOMMENDED");
+    expect(response.comparison.savingsWith).toBe(response.comparison.savingsWithout - 100000);
+    expect(response.comparison.householdWith).toBe(response.comparison.householdWithout - 100000);
   });
 });
 

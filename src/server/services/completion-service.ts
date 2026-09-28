@@ -88,7 +88,7 @@ function removeReservation(snapshot: PlanningSnapshot, plan: Plan): PlanningSnap
 
 function currentSnapshot(deps: CompletionServiceDeps): PlanningSnapshot {
   const snapshot = readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap);
-  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
   return snapshot;
 }
 

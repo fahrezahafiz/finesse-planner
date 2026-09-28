@@ -49,7 +49,7 @@ function createPurchase(command: unknown, deps: PlanServiceDeps, reason?: string
     const decision = evaluatePurchase(snapshot, proposal);
     if (decision.verdict === "UNABLE_TO_EVALUATE") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
     if (reason === undefined && decision.verdict !== "RECOMMENDED") {
-      throw new DomainError(!decision.category.passed ? "CATEGORY_BUDGET_EXCEEDED" : "INVALID_INPUT");
+      throw new DomainError(!decision.category.passed ? "CATEGORY_BUDGET_EXCEEDED" : !decision.account.passed ? "ACCOUNT_LIQUIDITY_EXCEEDED" : "PROTECTED_SAVINGS_EXCEEDED");
     }
     const account = plannedAccountLiquidity(snapshot, proposal);
     if (account === null) throw new DomainError("WORKBOOK_SCHEMA_INVALID");
@@ -125,7 +125,7 @@ function expire(repository: PlanRepository, deps: PlanServiceDeps): void {
 
 function currentSnapshot(deps: PlanServiceDeps): PlanningSnapshot {
   const snapshot = readPlanningSnapshot(deps.auth, deps.clock, deps.sourceMap);
-  if (snapshot.health !== "HEALTHY") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
+  if (snapshot.health !== "HEALTHY" && snapshot.health !== "UNDERFUNDED") throw new DomainError("WORKBOOK_SCHEMA_INVALID");
   return snapshot;
 }
 
